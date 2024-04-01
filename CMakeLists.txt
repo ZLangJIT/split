@@ -17,7 +17,9 @@ add_subdirectory(fmt)
 add_executable(split split_main.cpp)
 target_compile_definitions(split PUBLIC "NOMINMAX")
 target_include_directories(split PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(split fmt::fmt)
+
+target_link_directories(split PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(split PRIVATE fmt::fmt)
 
 set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "Installation directory for executables")
 set(INSTALL_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Installation directory for libraries")

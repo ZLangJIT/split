@@ -84,8 +84,9 @@ struct BinWriter {
     }
 
     void write_string(const char* value) {
-        if (value == nullptr || value[0] == '\0')
-            return;
+        if (value == nullptr) {
+            value = "";
+        }
 
         uint64_t size = (strlen(value)+1) * sizeof(char);
         uint8_t t = STR;
@@ -176,6 +177,123 @@ struct BinReader {
     }
 };
 
+#include <sys/stat.h>
+
+bool get_stats(const std::filesystem::path& path, struct stat& st) {
+    auto ps = std::filesystem::absolute(path).string();
+    auto s = ps.c_str();;
+    if (lstat(s, &st) == -1) {
+        auto se = errno;
+        fmt::print("failed to lstat {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+        return false;
+    }
+    return true;
+}
+
+bool path_exists(const std::filesystem::path& path) {
+    struct stat st;
+    auto ps = std::filesystem::absolute(path).string();
+    auto s = ps.c_str();;
+    if (lstat(s, &st) == -1) {
+        auto se = errno;
+        if (se == ENOENT) return false;
+        fmt::print("failed to lstat {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+        return false;
+    }
+    return true;
+}
+
+inline bool is_directory(const struct stat& st) {
+    return (st.st_mode & S_IFMT) == S_IFDIR;
+}
+
+inline bool is_reg(const struct stat& st) {
+    return (st.st_mode & S_IFMT) == S_IFREG;
+}
+
+inline bool is_symlink(const struct stat& st) {
+    return (st.st_mode & S_IFMT) == S_IFLNK;
+}
+
+bool is_symlink(const std::filesystem::path& path) {
+    struct stat st;
+    if (!get_stats(path, st)) return false;
+    return is_symlink(st);
+}
+
+std::string permissions_to_string(const struct stat& st) {
+    char s[11];
+    s[0] = is_directory(st) == S_IFDIR ? 'd' : '-';
+    s[1] = (st.st_mode & S_IRUSR) == S_IRUSR ? 'r' : '-';
+    s[2] = (st.st_mode & S_IWUSR) == S_IWUSR ? 'w' : '-';
+    s[3] = (st.st_mode & S_IXUSR) == S_IXUSR ? 'x' : '-';
+    s[4] = (st.st_mode & S_IRGRP) == S_IRGRP ? 'r' : '-';
+    s[5] = (st.st_mode & S_IWGRP) == S_IWGRP ? 'w' : '-';
+    s[6] = (st.st_mode & S_IXGRP) == S_IXGRP ? 'x' : '-';
+    s[7] = (st.st_mode & S_IROTH) == S_IROTH ? 'r' : '-';
+    s[8] = (st.st_mode & S_IWOTH) == S_IWOTH ? 'w' : '-';
+    s[9] = (st.st_mode & S_IXOTH) == S_IXOTH ? 'x' : '-';
+    s[10] = '\0';
+    return s;
+}
+
+struct stat string_to_permissions(const char * s) {
+    struct stat st;
+    st.st_mode |= s[0] == 'd' ? S_IFDIR : 0;
+    st.st_mode |= s[1] == 'r' ? S_IRUSR : 0;
+    st.st_mode |= s[2] == 'w' ? S_IWUSR : 0;
+    st.st_mode |= s[3] == 'x' ? S_IXUSR : 0;
+    st.st_mode |= s[4] == 'r' ? S_IRGRP : 0;
+    st.st_mode |= s[5] == 'w' ? S_IWGRP : 0;
+    st.st_mode |= s[6] == 'x' ? S_IXGRP : 0;
+    st.st_mode |= s[7] == 'r' ? S_IROTH : 0;
+    st.st_mode |= s[8] == 'w' ? S_IWOTH : 0;
+    st.st_mode |= s[9] == 'x' ? S_IXOTH : 0;
+    return st;
+}
+
+std::filesystem::perms permissions_to_filesystem(const struct stat& st) {
+    std::filesystem::perms s;
+    s |= (st.st_mode & S_IRUSR) == S_IRUSR ? std::filesystem::perms::owner_read : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IWUSR) == S_IWUSR ? std::filesystem::perms::owner_write : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IXUSR) == S_IXUSR ? std::filesystem::perms::owner_exec : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IRGRP) == S_IRGRP ? std::filesystem::perms::group_read : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IWGRP) == S_IWGRP ? std::filesystem::perms::group_write : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IXGRP) == S_IXGRP ? std::filesystem::perms::group_exec : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IROTH) == S_IROTH ? std::filesystem::perms::others_read : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IWOTH) == S_IWOTH ? std::filesystem::perms::others_write : std::filesystem::perms::none;
+    s |= (st.st_mode & S_IXOTH) == S_IXOTH ? std::filesystem::perms::others_exec : std::filesystem::perms::none;
+    return s;
+}
+
+std::string get_symlink_dest(const std::filesystem::path& path, const struct stat & st) {
+    if ((st.st_mode & S_IFMT) == S_IFLNK) {
+        auto path_size = st.st_size + 1;
+        if (path_size == 1) return "";
+        auto s = path.string();
+        char* buf = (char*)malloc(path_size * sizeof(char));
+        if (readlink(s.c_str(), buf, path_size) == -1) {
+            auto se = errno;
+            fmt::print("failed to read content of symbolic link {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+            free(buf);
+            return "";
+        }
+        buf[path_size - 1] = '\0';
+        std::string pstr = buf;
+        free(buf);
+        return pstr;
+    }
+    else {
+        return "";
+    }
+}
+
+std::string get_symlink_dest(const std::filesystem::path& path) {
+    struct stat st;
+    if (!get_stats(path, st)) return "";
+    return get_symlink_dest(path, st);
+}
+
 // the path converter is done, any path is now converted into a path relative to .
 //
 // [root]  ..       > .
@@ -193,59 +311,29 @@ struct PathRecorder {
     BinWriter w = {};
     BinReader r = {};
     uint64_t unknowns = 0;
+
     struct ChunkInfo {
         uintmax_t split = 0;
         uintmax_t offset = 0;
         uintmax_t length = 0;
     };
-    std::vector<std::pair<std::filesystem::path, std::pair<std::filesystem::perms, std::pair<std::filesystem::file_type, std::filesystem::file_time_type::rep>>>> bird_is_the_word_d = {};
-    struct FileInfo {
-        std::filesystem::path first;
-        uintmax_t second;
-        std::filesystem::perms third;
-        std::filesystem::file_type forth;
-        std::vector<ChunkInfo> fifth;
-        std::filesystem::file_time_type::rep sixth;
+
+    struct DirInfo {
+        std::filesystem::path path;
+        std::string perms;
+        std::filesystem::file_time_type::rep write_time;
     };
+    struct FileInfo {
+        std::filesystem::path path;
+        std::string perms;
+        std::filesystem::file_time_type::rep write_time;
+        uintmax_t file_size;
+        std::vector<ChunkInfo> file_chunks;
+    };
+
+    std::vector<DirInfo> bird_is_the_word_d = {};
     std::vector<FileInfo> bird_is_the_word_f = {};
-    std::vector<std::pair<std::filesystem::path, std::filesystem::file_type>> bird_is_the_word_s = {};
-
-    inline char permStr(const std::filesystem::perms& perms, const std::filesystem::perms & perm, char op) {
-        return ((perms & perm) == perm) ? op : '-';
-    }
-
-    std::string permsStr(const std::filesystem::perms& perms) {
-        char perm[10];
-        perm[0] = permStr(perms, std::filesystem::perms::group_read, 'r');
-        perm[1] = permStr(perms, std::filesystem::perms::group_write, 'w');
-        perm[2] = permStr(perms, std::filesystem::perms::group_exec, 'x');
-        perm[3] = permStr(perms, std::filesystem::perms::owner_read, 'r');
-        perm[4] = permStr(perms, std::filesystem::perms::owner_write, 'w');
-        perm[5] = permStr(perms, std::filesystem::perms::owner_exec, 'x');
-        perm[6] = permStr(perms, std::filesystem::perms::others_read, 'r');
-        perm[7] = permStr(perms, std::filesystem::perms::others_write, 'w');
-        perm[8] = permStr(perms, std::filesystem::perms::others_exec, 'x');
-        perm[9] = '\0';
-        return perm;
-    }
-
-    inline std::filesystem::perms strPerm(const char & perm_op, const std::filesystem::perms& perm, char op) {
-        return perm_op == op ? perm : std::filesystem::perms::none;
-    }
-
-    std::filesystem::perms strPerms(const char * perms) {
-        std::filesystem::perms perm;
-        perm |= strPerm(perms[0], std::filesystem::perms::group_read, 'r');
-        perm |= strPerm(perms[1], std::filesystem::perms::group_write, 'w');
-        perm |= strPerm(perms[2], std::filesystem::perms::group_exec, 'x');
-        perm |= strPerm(perms[3], std::filesystem::perms::owner_read, 'r');
-        perm |= strPerm(perms[4], std::filesystem::perms::owner_write, 'w');
-        perm |= strPerm(perms[5], std::filesystem::perms::owner_exec, 'x');
-        perm |= strPerm(perms[6], std::filesystem::perms::others_read, 'r');
-        perm |= strPerm(perms[7], std::filesystem::perms::others_write, 'w');
-        perm |= strPerm(perms[8], std::filesystem::perms::others_exec, 'x');
-        return perm;
-    }
+    std::vector<std::filesystem::path> bird_is_the_word_s = {};
 
     int split_number = 0;
     bool first_split = true;
@@ -258,7 +346,8 @@ struct PathRecorder {
     uintmax_t totalc = 0;
 
     std::string max_path = {};
-    std::filesystem::perms max_perms = {};
+    uint64_t max_perms = 0;
+    std::string max_perms_str = {};
     uintmax_t max_size = 0;
     uintmax_t max_chunk = 0;
     FILE* current_split_file = nullptr;
@@ -301,11 +390,19 @@ struct PathRecorder {
         }
     }
 
-    int recordPath_(const std::filesystem::path& path, const std::filesystem::file_type& type, const std::filesystem::perms& perms) {
-        if (type == std::filesystem::file_type::directory) {
-            bird_is_the_word_d.emplace_back(std::pair<std::filesystem::path, std::pair<std::filesystem::perms, std::pair<std::filesystem::file_type, std::filesystem::file_time_type::rep>>>(path, std::pair<std::filesystem::perms, std::pair<std::filesystem::file_type, std::filesystem::file_time_type::rep>>(perms, std::pair<std::filesystem::file_type, std::filesystem::file_time_type::rep>(type, std::filesystem::last_write_time(path).time_since_epoch().count()))));
+    int recordPath(const std::filesystem::path& path) {
+        struct stat st;
+        if (!get_stats(path, st)) {
+            return 1;
         }
-        else if (type == std::filesystem::file_type::regular) {
+        if (is_directory(st)) {
+            DirInfo di;
+            di.path = path;
+            di.perms = permissions_to_string(st);
+            di.write_time = std::filesystem::last_write_time(path).time_since_epoch().count();
+            bird_is_the_word_d.emplace_back(di);
+        }
+        else if (is_reg(st)) {
             std::vector<ChunkInfo> file_chunks;
             uintmax_t s = std::filesystem::file_size(path);
             total += s;
@@ -385,9 +482,9 @@ struct PathRecorder {
                 max_path = std::string(&ps[trim.length()]);
                 max_size = file_size;
                 max_chunk = max_file_chunks;
-                max_perms = perms;
+                max_perms = st.st_mode;
+                max_perms_str = permissions_to_string(st);
             }
-            std::filesystem::file_time_type::rep time = std::filesystem::last_write_time(path).time_since_epoch().count();
             if (remove_files) {
                 if (dry_run) {
                     fmt::print("rm -f {}\n", &ps[trim.length()]);
@@ -402,15 +499,14 @@ struct PathRecorder {
                 }
             }
             FileInfo file_info;
-            file_info.first = path;
-            file_info.second = file_size;
-            file_info.third = perms;
-            file_info.forth = type;
-            file_info.fifth = std::move(file_chunks);
-            file_info.sixth = time;
+            file_info.path = path;
+            file_info.perms = permissions_to_string(st);
+            file_info.write_time = std::filesystem::last_write_time(path).time_since_epoch().count();
+            file_info.file_size = file_size;
+            file_info.file_chunks = std::move(file_chunks);
             bird_is_the_word_f.emplace_back(std::move(file_info));
         }
-        else if (type == std::filesystem::file_type::symlink) {
+        else if (is_symlink(st)) {
             if (remove_files) {
                 if (dry_run) {
                     auto paths = path.string();
@@ -426,7 +522,7 @@ struct PathRecorder {
                     }
                 }
             }
-            bird_is_the_word_s.emplace_back(std::pair<std::filesystem::path, std::filesystem::file_type>(path, type));
+            bird_is_the_word_s.emplace_back(path);
         }
         else {
             auto s = path.string();
@@ -436,68 +532,43 @@ struct PathRecorder {
         return 0;
     }
 
-    void recordPathDirectory(const std::filesystem::path& path, const std::filesystem::file_type& type, const std::filesystem::file_time_type::rep & dir_time, const std::filesystem::perms& perms) {
-        auto s = path.string();
-        auto ps = permsStr(perms);
-        if (type == std::filesystem::file_type::directory) {
-            const char* dir = &s[trim.length()];
-            const char* dir_perms = ps.c_str();
-            fmt::print("recording directory: d{} {: >8}   {}\n", dir_perms, 0, dir);
-            w.write_string(&s[trim.length()]);
-            w.write_string(dir_perms);
-            w.write_u64(dir_time);
-        }
-        else {
-            fmt::print("unknown type: {}\n", &s[trim.length()]);
-        }
+    void recordPathDirectory(const DirInfo & dirinfo) {
+        auto s = dirinfo.path.string();
+        const char* dir = &s[trim.length()];
+        fmt::print("recording directory: d{} {: >8}   {}\n", dirinfo.perms, 0, dir);
+        w.write_string(&s[trim.length()]);
+        w.write_string(dirinfo.perms.c_str());
+        w.write_u64(dirinfo.write_time);
     }
 
     void recordPathFile(const FileInfo & fileInfo, const size_t& mfc) {
-        auto s = fileInfo.first.string();
-        auto ps = permsStr(fileInfo.third);
-        if (fileInfo.forth == std::filesystem::file_type::regular) {
-            const char* file = &s[trim.length()];
-            const char* file_perms = ps.c_str();
-            uint64_t file_chunks = fileInfo.fifth.size();
+        auto s = fileInfo.path.string();
+        const char* file = &s[trim.length()];
+        uint64_t file_chunks = fileInfo.file_chunks.size();
 
-            fmt::print("recording file:       {} {: >8}   ({: >{}} chunks)   {}\n", file_perms, fileInfo.second, file_chunks, mfc, file);
+        fmt::print("recording file:       {} {: >8}   ({: >{}} chunks)   {}\n", fileInfo.perms, fileInfo.file_size, file_chunks, mfc, file);
 
-            w.write_string(file);
-            w.write_string(file_perms);
-            w.write_u64(fileInfo.second);
-            w.write_u64(fileInfo.sixth);
-            w.write_u64(file_chunks);
-            for (const ChunkInfo& chunk : fileInfo.fifth) {
-                w.write_u64(chunk.split);
-                w.write_u64(chunk.offset);
-                w.write_u64(chunk.length);
-            }
-        }
-        else {
-            fmt::print("unknown type: {}\n", &s[trim.length()]);
+        w.write_string(file);
+        w.write_string(fileInfo.perms.c_str());
+        w.write_u64(fileInfo.write_time);
+        w.write_u64(fileInfo.file_size);
+        w.write_u64(file_chunks);
+        for (const ChunkInfo& chunk : fileInfo.file_chunks) {
+            w.write_u64(chunk.split);
+            w.write_u64(chunk.offset);
+            w.write_u64(chunk.length);
         }
     }
 
-    void recordPathSymlink(const std::filesystem::path& path, const std::filesystem::file_type& type) {
+    void recordPathSymlink(const std::filesystem::path& path) {
         auto s = path.string();
-        if (type == std::filesystem::file_type::symlink) {
-            const char* symlink = &s[trim.length()];
-            auto sd = std::filesystem::read_symlink(path);
-            auto sds = sd.string();
-            const char* symlink_dest = sds.c_str();
+        const char* symlink = &s[trim.length()];
+        auto symlink_dest = get_symlink_dest(path);
 
-            fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlink_dest);
+        fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlink_dest);
 
-            w.write_string(symlink);
-            w.write_string(symlink_dest);
-        }
-        else {
-            fmt::print("unknown type: {}\n", &s[trim.length()]);
-        }
-    }
-
-    int recordPath(const std::filesystem::path& path, const std::filesystem::file_status& status) {
-        return recordPath_(path, status.type(), status.permissions());
+        w.write_string(symlink);
+        w.write_string(symlink_dest.c_str());
     }
 
     int record(const char* path) {
@@ -511,12 +582,22 @@ struct PathRecorder {
             return record(x);
         }
         std::filesystem::path p = std::filesystem::path(path);
-        if (!std::filesystem::exists(p)) {
-            fmt::print("item does not exist: {}\n", path);
-            return 1;
-        }
 
-        if (std::filesystem::is_directory(p)) {
+        if (::is_symlink(p)) {
+            auto split_map_name = fmt::format("{}split.map", SPLIT_PREFIX);
+            w.create(split_map_name.c_str());
+            w.write_string("BIN_WRITR_MGK");
+            {
+                std::filesystem::path copy = p;
+                trim = copy.remove_filename().string();
+            }
+            fmt::print("entering directory: {}\n", trim);
+            if (recordPath(p) == 1) {
+                _close();
+                return 1;
+            }
+            _close();
+        } else if (std::filesystem::is_directory(p)) {
             auto split_map_name = fmt::format("{}split.map", SPLIT_PREFIX);
             w.create(split_map_name.c_str());
             w.write_string("BIN_WRITR_MGK");
@@ -531,8 +612,8 @@ struct PathRecorder {
             std::filesystem::recursive_directory_iterator end;
             for (; begin != end; begin++) {
                 auto & fpath = *begin;
-                if (fpath.exists()) {
-                    if (recordPath(fpath.path(), fpath.status()) == 1) {
+                if (path_exists(fpath)) {
+                    if (recordPath(fpath.path()) == 1) {
                         _close();
                         return 1;
                     }
@@ -551,27 +632,13 @@ struct PathRecorder {
                 trim = copy.remove_filename().string();
             }
             fmt::print("entering directory: {}\n", trim);
-            if (recordPath(p, std::filesystem::status(p)) == 1) {
+            if (recordPath(p) == 1) {
                 _close();
                 return 1;
             }
             _close();
         }
-        else if (std::filesystem::is_symlink(p)) {
-            auto split_map_name = fmt::format("{}split.map", SPLIT_PREFIX);
-            w.create(split_map_name.c_str());
-            w.write_string("BIN_WRITR_MGK");
-            {
-                std::filesystem::path copy = p;
-                trim = copy.remove_filename().string();
-            }
-            fmt::print("entering directory: {}\n", trim);
-            if (recordPath(p, std::filesystem::status(p)) == 1) {
-                _close();
-                return 1;
-            }
-            _close();
-        } else {
+        else {
             fmt::print("unknown type: {}\n", &path[trim.length()]);
             w.close();
             return 1;
@@ -584,8 +651,7 @@ struct PathRecorder {
         w.write_u64(max_file_chunks);
         w.write_u64(split_number);
         w.write_string(max_path.c_str());
-        auto mps = permsStr(max_perms);
-        w.write_string(mps.c_str());
+        w.write_string(max_perms_str.c_str());
         w.write_u64(max_size);
         w.write_u64(max_chunk);
         size_t mfc = fmt::formatted_size("{}", max_file_chunks);
@@ -595,28 +661,28 @@ struct PathRecorder {
             std::reverse(copy.begin(), copy.end());
             for (auto& d : copy) {
                 if (dry_run) {
-                    auto paths = d.first.string();
+                    auto paths = d.path.string();
                     fmt::print("rmdir {}\n", &paths[trim.length()]);
                 }
                 else {
                     try {
-                        std::filesystem::remove(d.first);
+                        std::filesystem::remove(d.path);
                     }
                     catch (std::exception& e) {
-                        auto paths = d.first.string();
+                        auto paths = d.path.string();
                         fmt::print("failed to remove path: {}\n", &paths[trim.length()]);
                     }
                 }
             }
         }
         for (auto& d : bird_is_the_word_d) {
-            recordPathDirectory(d.first, d.second.second.first, d.second.second.second, d.second.first);
+            recordPathDirectory(d);
         }
         for (auto& f : bird_is_the_word_f) {
             recordPathFile(f, mfc);
         }
         for (auto& s : bird_is_the_word_s) {
-            recordPathSymlink(s.first, s.second);
+            recordPathSymlink(s);
         }
         w.close();
         fmt::print("directories recorded: {}\n", bird_is_the_word_d.size());
@@ -627,13 +693,13 @@ struct PathRecorder {
         fmt::print("unknown types:        {}\n", unknowns);
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)));
         fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("largest file chunk:   {} {: >8}   ({: >{}} chunks)   {}\n", mps, max_size, max_chunk, mfc, max_path);
+        fmt::print("largest file chunk:   {} {: >8}   ({: >{}} chunks)   {}\n", max_perms_str, max_size, max_chunk, mfc, max_path);
         return 0;
     }
 
     int playback(const char * path, bool join_files, bool list_chunks) {
         if (join_files) {
-            if (std::filesystem::exists(out_directory)) {
+            if (path_exists(out_directory)) {
                 if (!std::filesystem::is_directory(out_directory)) {
                     fmt::print("cannot output to a non-directory: {}\n", out_directory);
                     return 1;
@@ -642,7 +708,7 @@ struct PathRecorder {
                 std::filesystem::directory_iterator end;
                 for (; begin != end; begin++) {
                     auto& fpath = *begin;
-                    if (fpath.exists()) {
+                    if (path_exists(fpath)) {
                         fmt::print("cannot output to a non-empty directory: {}\n", out_directory);
                         return 1;
                     }
@@ -659,7 +725,7 @@ struct PathRecorder {
         }
 
         std::filesystem::path p = std::filesystem::path(path);
-        if (!std::filesystem::exists(p)) {
+        if (!path_exists(p)) {
             fmt::print("item does not exist: {}\n", path);
             return 1;
         }
@@ -734,8 +800,8 @@ struct PathRecorder {
         for (uintmax_t i = 0; i < files; i++) {
             const char* file = r.read_string();
             const char* file_perms = r.read_string();
-            uint64_t file_size = r.read_u64();
             std::filesystem::file_time_type::rep file_time = (std::filesystem::file_time_type::rep)r.read_u64();
+            uint64_t file_size = r.read_u64();
             uint64_t file_chunks = r.read_u64();
             total += file_size;
 
@@ -835,7 +901,7 @@ struct PathRecorder {
                     fflush(f);
                     fclose(f);
                     f = nullptr;
-                    std::filesystem::permissions(out_f, strPerms(file_perms));
+                    std::filesystem::permissions(out_f, permissions_to_filesystem(string_to_permissions(file_perms)));
                     std::filesystem::last_write_time(out_f, std::filesystem::file_time_type(std::filesystem::file_time_type::duration(file_time)));
                 }
             }
@@ -903,33 +969,43 @@ struct PathRecorder {
                     fmt::print("ln -s {} {}/{}\n", symlink_dest, out_directory, symlink);
                 }
                 else {
+                    std::filesystem::path sp = out_directory + "/" + symlink;
+                    // TODO: resolve a symlink destination path with account for non-existant path
+                    // 
                     // attempt to handle the case where some systems require a symlink to
                     // specify that its target is a directory or a file
                     //
-                    std::filesystem::path sp = p = out_directory + symlink;
-                    auto parent = sp;
-                    if (!parent.has_parent_path()) {
-                        fmt::print("cannot obtain parent directory of item: {}\n", parent);
-                        r.close();
-                        free((void*)SPLIT_PREFIX);
-                        free((void*)max_path);
-                        free((void*)max_perms);
-                        return 1;
-                    }
-                    parent = parent.parent_path();
-                    std::filesystem::path t = parent.string() + "/" + symlink_dest;
-                    std::filesystem::path resolved_t = std::filesystem::weakly_canonical(symlink_dest);
-                    if (std::filesystem::exists(resolved_t)) {
-                        if (std::filesystem::is_directory(resolved_t)) {
-                            std::filesystem::create_directory_symlink(symlink_dest, sp);
-                        }
-                        else {
-                            std::filesystem::create_symlink(symlink_dest, sp);
-                        }
-                    }
-                    else {
+                    //if (path_exists(sp)) {
+                    //    fmt::print("symlink destination does not exist: {}\n", parent);
+                    //    r.close();
+                    //    free((void*)SPLIT_PREFIX);
+                    //    free((void*)max_path);
+                    //    free((void*)max_perms);
+                    //    return 1;
+                    //}
+                    //auto parent = sp;
+                    //if (!parent.has_parent_path()) {
+                    //    fmt::print("cannot obtain parent directory of item: {}\n", parent);
+                    //    r.close();
+                    //    free((void*)SPLIT_PREFIX);
+                    //    free((void*)max_path);
+                    //    free((void*)max_perms);
+                    //    return 1;
+                    //}
+                    //parent = parent.parent_path();
+                    //std::filesystem::path t = parent.string() + "/" + symlink_dest;
+                    //std::filesystem::path resolved_t = std::filesystem::weakly_canonical(symlink_dest);
+                    //if (path_exists(resolved_t)) {
+                    //    if (std::filesystem::is_directory(resolved_t)) {
+                    //        std::filesystem::create_directory_symlink(symlink_dest, sp);
+                    //    }
+                    //    else {
+                    //        std::filesystem::create_symlink(symlink_dest, sp);
+                    //    }
+                    //}
+                    //else {
                         std::filesystem::create_symlink(symlink_dest, sp);
-                    }
+                    //}
                 }
             }
             else {
@@ -944,7 +1020,7 @@ struct PathRecorder {
                     fmt::print("chmod {: >9} {}/{}\n", dirs.second.first, out_directory, dirs.first);
                 }
                 else {
-                    std::filesystem::permissions(out_directory + "/" + dirs.first, strPerms(dirs.second.first));
+                    std::filesystem::permissions(out_directory + "/" + dirs.first, permissions_to_filesystem(string_to_permissions(dirs.second.first)));
                     std::filesystem::last_write_time(out_directory + "/" + dirs.first, std::filesystem::file_time_type(std::filesystem::file_time_type::duration(dirs.second.second)));
                 }
                 free((void*)dirs.first);
@@ -1048,11 +1124,12 @@ int main(int argc, const char** argv) {
             else if (is_split) {
                 if (argc == 0) {
                     // all arguments must have been met
-                    if (!std::filesystem::exists(file)) {
+                    if (!path_exists(file)) {
                         fmt::print("item does not exist: {}\n", file);
                         return 1;
                     }
                     if (remove_files) {
+                        // TODO: make this work for a non-existing symlink
                         auto current = std::filesystem::canonical(std::filesystem::current_path());
                         auto root = std::filesystem::canonical(current.root_path());
                         auto target = std::filesystem::canonical(std::filesystem::absolute(file));
