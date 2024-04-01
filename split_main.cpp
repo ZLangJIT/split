@@ -397,7 +397,7 @@ struct PathRecorder {
                         std::filesystem::remove(path);
                     }
                     catch (std::exception & e) {
-                        fmt::print("failed to remove file: {}\n", &ps[trim.length()]);
+                        fmt::print("failed to remove path: {}\n", &ps[trim.length()]);
                     }
                 }
             }
@@ -422,7 +422,7 @@ struct PathRecorder {
                     }
                     catch (std::exception& e) {
                         auto paths = path.string();
-                        fmt::print("failed to remove file: {}\n", &paths[trim.length()]);
+                        fmt::print("failed to remove path: {}\n", &paths[trim.length()]);
                     }
                 }
             }
@@ -604,7 +604,7 @@ struct PathRecorder {
                     }
                     catch (std::exception& e) {
                         auto paths = d.first.string();
-                        fmt::print("failed to remove file: {}\n", &paths[trim.length()]);
+                        fmt::print("failed to remove path: {}\n", &paths[trim.length()]);
                     }
                 }
             }
@@ -794,7 +794,7 @@ struct PathRecorder {
                                     std::filesystem::remove(path_to_remove);
                                 }
                                 catch (std::exception& e) {
-                                    fmt::print("failed to remove file: {}\n", path_to_remove);
+                                    fmt::print("failed to remove path: {}\n", path_to_remove);
                                 }
                             }
                             current_split = split;
@@ -880,7 +880,7 @@ struct PathRecorder {
                             std::filesystem::remove(path_to_remove);
                         }
                         catch (std::exception& e) {
-                            fmt::print("failed to remove file: {}\n", path_to_remove);
+                            fmt::print("failed to remove path: {}\n", path_to_remove);
                         }
                     }
                     current_split_file = nullptr;
