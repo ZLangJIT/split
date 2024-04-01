@@ -1141,9 +1141,24 @@ int main(int argc, const char** argv) {
                     }
                     if (remove_files) {
                         // TODO: make this work for a non-existing symlink
-                        auto current = std::filesystem::canonical(std::filesystem::current_path());
-                        auto root = std::filesystem::canonical(current.root_path());
-                        auto target = std::filesystem::canonical(std::filesystem::absolute(file));
+                        auto cwd = std::filesystem::current_path();
+                        auto current = cwd;
+                        auto root = current.root_path();
+                        // TODO: concate to file + "/..";
+                        auto par = std::filesystem::path(file);
+                        if (par.has_parent_path() && par != root) {
+                            par = par.parent_path();
+                        }
+                        auto p = par.string();
+                        char* res = realpath(p.c_str(), nullptr);
+                        if (res == nullptr) {
+                            auto se = errno;
+                            fmt::print("failed to resolve path of {}\nerrno: -{} ({})\n", p, se, fmt::system_error(se, ""));
+                            return 1;
+                        }
+                        std::string r = std::string(res) + "/" + std::filesystem::path(file).filename().string();
+                        free((void*)res);
+                        std::filesystem::path target = r;
                         if (current.compare(target) == 0) {
                             fmt::print("cannot remove the current working directory\n");
                             return 1;
