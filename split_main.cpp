@@ -330,10 +330,14 @@ struct PathRecorder {
         uintmax_t file_size;
         std::vector<ChunkInfo> file_chunks;
     };
+    struct SymlinkInfo {
+        std::filesystem::path path;
+        std::filesystem::path dest;
+    };
 
     std::vector<DirInfo> bird_is_the_word_d = {};
     std::vector<FileInfo> bird_is_the_word_f = {};
-    std::vector<std::filesystem::path> bird_is_the_word_s = {};
+    std::vector<SymlinkInfo> bird_is_the_word_s = {};
 
     int split_number = 0;
     bool first_split = true;
@@ -485,6 +489,7 @@ struct PathRecorder {
                 max_perms = st.st_mode;
                 max_perms_str = permissions_to_string(st);
             }
+            auto file_time = std::filesystem::last_write_time(path).time_since_epoch().count();
             if (remove_files) {
                 if (dry_run) {
                     fmt::print("rm -f {}\n", &ps[trim.length()]);
@@ -501,12 +506,13 @@ struct PathRecorder {
             FileInfo file_info;
             file_info.path = path;
             file_info.perms = permissions_to_string(st);
-            file_info.write_time = std::filesystem::last_write_time(path).time_since_epoch().count();
+            file_info.write_time = file_time;
             file_info.file_size = file_size;
             file_info.file_chunks = std::move(file_chunks);
             bird_is_the_word_f.emplace_back(std::move(file_info));
         }
         else if (is_symlink(st)) {
+            auto dest = get_symlink_dest(path);
             if (remove_files) {
                 if (dry_run) {
                     auto paths = path.string();
@@ -522,7 +528,10 @@ struct PathRecorder {
                     }
                 }
             }
-            bird_is_the_word_s.emplace_back(path);
+            SymlinkInfo si;
+            si.path = path;
+            si.dest = dest;
+            bird_is_the_word_s.emplace_back(si);
         }
         else {
             auto s = path.string();
@@ -532,13 +541,13 @@ struct PathRecorder {
         return 0;
     }
 
-    void recordPathDirectory(const DirInfo & dirinfo) {
-        auto s = dirinfo.path.string();
+    void recordPathDirectory(const DirInfo & dirInfo) {
+        auto s = dirInfo.path.string();
         const char* dir = &s[trim.length()];
-        fmt::print("recording directory: d{} {: >8}   {}\n", dirinfo.perms, 0, dir);
+        fmt::print("recording directory: d{} {: >8}   {}\n", dirInfo.perms, 0, dir);
         w.write_string(&s[trim.length()]);
-        w.write_string(dirinfo.perms.c_str());
-        w.write_u64(dirinfo.write_time);
+        w.write_string(dirInfo.perms.c_str());
+        w.write_u64(dirInfo.write_time);
     }
 
     void recordPathFile(const FileInfo & fileInfo, const size_t& mfc) {
@@ -560,15 +569,14 @@ struct PathRecorder {
         }
     }
 
-    void recordPathSymlink(const std::filesystem::path& path) {
-        auto s = path.string();
+    void recordPathSymlink(const SymlinkInfo& symlinkInfo) {
+        auto s = symlinkInfo.path.string();
         const char* symlink = &s[trim.length()];
-        auto symlink_dest = get_symlink_dest(path);
 
-        fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlink_dest);
+        fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlinkInfo.dest);
 
         w.write_string(symlink);
-        w.write_string(symlink_dest.c_str());
+        w.write_string(symlinkInfo.dest.c_str());
     }
 
     int record(const char* path) {
