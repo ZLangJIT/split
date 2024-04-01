@@ -970,6 +970,9 @@ struct PathRecorder {
                 }
                 else {
                     std::filesystem::path sp = out_directory + "/" + symlink;
+
+                    // TODO: set symlink permissions for MacOS
+                    //
                     // TODO: resolve a symlink destination path with account for non-existant path
                     // 
                     // attempt to handle the case where some systems require a symlink to
