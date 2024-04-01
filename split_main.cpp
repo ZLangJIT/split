@@ -309,13 +309,19 @@ struct PathRecorder {
             std::vector<ChunkInfo> file_chunks;
             uintmax_t s = std::filesystem::file_size(path);
             total += s;
-            if (_open() == 1) return 1;
             auto ps = path.string();
-            FILE * f = fopen(ps.c_str(), "rb");
-            if (f == nullptr) {
-                fmt::print("failed to open file: {}\n", ps);
-                _close();
-                return 1;
+            if (_open() == 1) return 1;
+            FILE* f;
+            if (dry_run) {
+                fmt::print("fopen()\n");
+            }
+            else {
+                f = fopen(ps.c_str(), "rb");
+                if (f == nullptr) {
+                    fmt::print("failed to open file: {}\n", ps);
+                    _close();
+                    return 1;
+                }
             }
             while (s != 0) {
                 ChunkInfo chunk;
@@ -325,7 +331,13 @@ struct PathRecorder {
                     // we have 0 bytes available, request a new chunk
                     _close();
                     if (_open() == 1) {
-                        fclose(f);
+                        if (dry_run) {
+                            fmt::print("fclose()\n");
+                        }
+                        else {
+                            fclose(f);
+                            f = nullptr;
+                        }
                         return 1;
                     }
                     current_chunk_size = 0;
@@ -338,9 +350,12 @@ struct PathRecorder {
                 current_chunk_size += chunk.length;
                 totalc += chunk.length;
                 s -= chunk.length;
-                fmt::print("writing {} bytes ({} bytes left)\n", chunk.length, s);
                 if (dry_run) {
+                    fmt::print("writing {} bytes ({} bytes left)\n", chunk.length, s);
+                    fmt::print("malloc()\n");
+                    fmt::print("fread()\n");
                     fmt::print("fwrite()\n");
+                    fmt::print("free()\n");
                 }
                 else {
                     void* buffer = malloc(chunk.length);
@@ -356,7 +371,13 @@ struct PathRecorder {
                 }
                 file_chunks.emplace_back(chunk);
             }
-            fclose(f);
+            if (dry_run) {
+                fmt::print("fclose()\n");
+            }
+            else {
+                fclose(f);
+                f = nullptr;
+            }
             total_chunk_count += file_chunks.size();
             max_file_chunks = std::max(max_file_chunks, file_chunks.size());
             uint64_t file_size = std::filesystem::file_size(path);
@@ -561,6 +582,7 @@ struct PathRecorder {
         w.write_u64(bird_is_the_word_f.size());
         w.write_u64(total_chunk_count);
         w.write_u64(max_file_chunks);
+        w.write_u64(split_number);
         w.write_string(max_path.c_str());
         auto mps = permsStr(max_perms);
         w.write_string(mps.c_str());
@@ -600,6 +622,7 @@ struct PathRecorder {
         fmt::print("directories recorded: {}\n", bird_is_the_word_d.size());
         fmt::print("files recorded:       {}\n", bird_is_the_word_f.size());
         fmt::print("chunks recorded:      {}\n", total_chunk_count);
+        fmt::print("split files recorded: {}\n", split_number);
         fmt::print("symlinks recorded:    {}\n", bird_is_the_word_s.size());
         fmt::print("unknown types:        {}\n", unknowns);
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)));
@@ -663,6 +686,7 @@ struct PathRecorder {
         uint64_t files = r.read_u64();
         uint64_t chunks = r.read_u64();
         uint64_t max_file_chunks = r.read_u64();
+        uint64_t split_number = r.read_u64();
         size_t mfc = fmt::formatted_size("{}", max_file_chunks);
         const char* max_path = r.read_string();
         const char* max_perms = r.read_string();
