@@ -372,7 +372,12 @@ struct PathRecorder {
                     fmt::print("rm -f {}\n", &ps[trim.length()]);
                 }
                 else {
-                    std::filesystem::remove(path);
+                    try {
+                        std::filesystem::remove(path);
+                    }
+                    catch (std::exception & e) {
+                        fmt::print("failed to remove file: {}\n", &ps[trim.length()]);
+                    }
                 }
             }
             FileInfo file_info;
@@ -391,7 +396,13 @@ struct PathRecorder {
                     fmt::print("rm -f {}\n", &paths[trim.length()]);
                 }
                 else {
-                    std::filesystem::remove(path);
+                    try {
+                        std::filesystem::remove(path);
+                    }
+                    catch (std::exception& e) {
+                        auto paths = path.string();
+                        fmt::print("failed to remove file: {}\n", &paths[trim.length()]);
+                    }
                 }
             }
             bird_is_the_word_s.emplace_back(std::pair<std::filesystem::path, std::filesystem::file_type>(path, type));
@@ -566,7 +577,13 @@ struct PathRecorder {
                     fmt::print("rmdir {}\n", &paths[trim.length()]);
                 }
                 else {
-                    std::filesystem::remove(d.first);
+                    try {
+                        std::filesystem::remove(d.first);
+                    }
+                    catch (std::exception& e) {
+                        auto paths = d.first.string();
+                        fmt::print("failed to remove file: {}\n", &paths[trim.length()]);
+                    }
                 }
             }
         }
@@ -749,7 +766,12 @@ struct PathRecorder {
                             }
                             if (remove_files) {
                                 auto path_to_remove = fmt::format("{}/{}split.{}", parent, SPLIT_PREFIX, current_split);
-                                std::filesystem::remove(path_to_remove);
+                                try {
+                                    std::filesystem::remove(path_to_remove);
+                                }
+                                catch (std::exception& e) {
+                                    fmt::print("failed to remove file: {}\n", path_to_remove);
+                                }
                             }
                             current_split = split;
                         }
@@ -830,7 +852,12 @@ struct PathRecorder {
                     fclose(current_split_file);
                     if (remove_files) {
                         auto path_to_remove = fmt::format("{}/{}split.{}", parent, SPLIT_PREFIX, current_split);
-                        std::filesystem::remove(path_to_remove);
+                        try {
+                            std::filesystem::remove(path_to_remove);
+                        }
+                        catch (std::exception& e) {
+                            fmt::print("failed to remove file: {}\n", path_to_remove);
+                        }
                     }
                     current_split_file = nullptr;
                 }
