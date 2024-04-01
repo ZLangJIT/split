@@ -910,7 +910,8 @@ struct PathRecorder {
 
 void split_usage() {
     fmt::print("\n--split  [-n] [-r] [--size <split_size>] [--name <name>] <dir/file>\n");
-    fmt::print("                 split a directory/file\n");
+    fmt::print("         info\n");
+    fmt::print("                 split a directory/file into fixed size chunks\n");
     fmt::print("                 symlinks WILL NOT be followed\n");
     fmt::print("                 the split files will be created in the current working directory\n");
     fmt::print("         -n\n");
@@ -931,6 +932,7 @@ void split_usage() {
 
 void join_usage() {
     fmt::print("\n--join   [-n] [-r] [prefix.]split.map --out <out_dir>\n");
+    fmt::print("         info\n");
     fmt::print("                 join a split map to restore a directory/file\n");
     fmt::print("         -n\n");
     fmt::print("                 list what would have been done, do not create/modify anything\n");
@@ -946,6 +948,7 @@ void join_usage() {
 
 void ls_usage() {
     fmt::print("\n--ls     [prefix.]split.map\n");
+    fmt::print("         info\n");
     fmt::print("                 list the contents of a split map\n");
     fmt::print("         [prefix.]\n");
     fmt::print("                 an optional prefix for the split map\n");
@@ -961,7 +964,6 @@ void usage() {
 }
 
 int main(int argc, const char** argv) {
-    // ./prog
     if (argc == 0) {
         usage();
         return 1;
