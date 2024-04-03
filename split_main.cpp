@@ -1144,7 +1144,6 @@ int main(int argc, const char** argv) {
                         auto cwd = std::filesystem::current_path();
                         auto current = cwd;
                         auto root = current.root_path();
-                        // TODO: concate to file + "/..";
                         auto par = std::filesystem::path(file);
                         if (par.has_parent_path() && par != root) {
                             par = par.parent_path();
