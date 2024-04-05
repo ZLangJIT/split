@@ -749,8 +749,14 @@ struct PathRecorder {
             curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L); // fail on error
             char errbuf[CURL_ERROR_SIZE] = { 0 };
             curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
-            // cacert.pem
-            curl_easy_setopt(curl, CURLOPT_CAINFO, "cacert.pem");
+#include "cacert.pem.h"
+            struct curl_blob pem_blob;
+            pem_blob.data = (void*)PEM.c_str();
+            pem_blob.len = PEM.length();
+            pem_blob.flags = CURL_BLOB_NOCOPY;
+            curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+            curl_easy_setopt(curl, CURLOPT_CAPATH, nullptr);
+            curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &pem_blob);
             curl_easy_setopt(curl, CURLOPT_URL, location);
 
             /* send all data to this function  */

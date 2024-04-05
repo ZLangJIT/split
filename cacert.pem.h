@@ -1,3 +1,4 @@
+static const std::string PEM = R"(
 ##
 ## Bundle of CA Root Certificates
 ##
@@ -3579,3 +3580,4 @@ wPfc5+pbrrLMtTWGS9DiP7bY+A4A7l3j941Y/8+LN+ljX273CXE2whJdV/LItM3z7gLfEdxquVeE
 HVlNjM7IDiPCtyaaEBRx/pOyiriA8A4QntOoUAw3gi/q4Iqd4Sw5/7W0cwDk90imc6y/st53BIe0
 o82bNSQ3+pCTE4FCxpgmdTdmQRCsu/WU48IxK63nI1bMNSWSs1A=
 -----END CERTIFICATE-----
+)";
