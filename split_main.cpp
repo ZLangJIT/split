@@ -4,11 +4,14 @@
 #include <memory>
 #include <cstring>
 
+#include <sys/stat.h>
 #include <filesystem>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <fmt/std.h>
 #include <fmt/printf.h>
+#include <curl/curl.h>
+#include <tmpfile/tmpfile.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -48,6 +51,12 @@ struct BinWriter {
         if (bin == nullptr) {
             this->name = name;
             bin = fopen(name, "wb");
+            if (bin == nullptr) {
+                auto se = errno;
+                std::string e = fmt::format("failed to create item {}\nerrno: -{} ({})\n", name, se, fmt::system_error(se, ""));
+                throw std::runtime_error(e);
+            }
+            fseek(bin, 0, SEEK_SET);
         }
     }
 
@@ -103,10 +112,11 @@ struct BinReader {
         if (bin == nullptr) {
             bin = fopen(name, "rb");
             if (bin == nullptr) {
-                std::string e = "the path could not be opened: ";
-                e += name;
+                auto se = errno;
+                std::string e = fmt::format("failed to open item {}\nerrno: -{} ({})\n", name, se, fmt::system_error(se, ""));
                 throw std::runtime_error(e);
             }
+            fseek(bin, 0, SEEK_SET);
         }
     }
 
@@ -176,8 +186,6 @@ struct BinReader {
         return value;
     }
 };
-
-#include <sys/stat.h>
 
 bool get_stats(const std::filesystem::path& path, struct stat& st) {
     auto ps = std::filesystem::absolute(path).string();
@@ -372,7 +380,7 @@ struct PathRecorder {
                 current_split_file = fopen(split_f.c_str(), "wb");
                 if (current_split_file == nullptr) {
                     fmt::print("failed to create file: {}\n", split_f);
-                    return 1;
+                    return -1;
                 }
             }
             open = true;
@@ -397,7 +405,7 @@ struct PathRecorder {
     int recordPath(const std::filesystem::path& path) {
         struct stat st;
         if (!get_stats(path, st)) {
-            return 1;
+            return -1;
         }
         if (is_directory(st)) {
             DirInfo di;
@@ -411,7 +419,7 @@ struct PathRecorder {
             uintmax_t s = std::filesystem::file_size(path);
             total += s;
             auto ps = path.string();
-            if (_open() == 1) return 1;
+            if (_open() == -1) return -1;
             FILE* f;
             if (dry_run) {
                 fmt::print("fopen()\n");
@@ -421,7 +429,7 @@ struct PathRecorder {
                 if (f == nullptr) {
                     fmt::print("failed to open file: {}\n", ps);
                     _close();
-                    return 1;
+                    return -1;
                 }
             }
             while (s != 0) {
@@ -431,7 +439,7 @@ struct PathRecorder {
                 if (avail == 0) {
                     // we have 0 bytes available, request a new chunk
                     _close();
-                    if (_open() == 1) {
+                    if (_open() == -1) {
                         if (dry_run) {
                             fmt::print("fclose()\n");
                         }
@@ -439,7 +447,7 @@ struct PathRecorder {
                             fclose(f);
                             f = nullptr;
                         }
-                        return 1;
+                        return -1;
                     }
                     current_chunk_size = 0;
                     avail = chunk_size;
@@ -461,10 +469,7 @@ struct PathRecorder {
                 else {
                     void* buffer = malloc(chunk.length);
                     if (buffer == nullptr) {
-                        fmt::print("failed to allocate {} bytes\n", chunk.length);
-                        fclose(f);
-                        _close();
-                        return 1;
+                        throw std::bad_alloc();
                     }
                     fread(buffer, 1, chunk.length, f);
                     fwrite(buffer, 1, chunk.length, current_split_file);
@@ -600,9 +605,9 @@ struct PathRecorder {
                 trim = copy.remove_filename().string();
             }
             fmt::print("entering directory: {}\n", trim);
-            if (recordPath(p) == 1) {
+            if (recordPath(p) == -1) {
                 _close();
-                return 1;
+                return -1;
             }
             _close();
         } else if (std::filesystem::is_directory(p)) {
@@ -621,9 +626,9 @@ struct PathRecorder {
             for (; begin != end; begin++) {
                 auto & fpath = *begin;
                 if (path_exists(fpath)) {
-                    if (recordPath(fpath.path()) == 1) {
+                    if (recordPath(fpath.path()) == -1) {
                         _close();
-                        return 1;
+                        return -1;
                     }
                 }
                 else {
@@ -640,16 +645,16 @@ struct PathRecorder {
                 trim = copy.remove_filename().string();
             }
             fmt::print("entering directory: {}\n", trim);
-            if (recordPath(p) == 1) {
+            if (recordPath(p) == -1) {
                 _close();
-                return 1;
+                return -1;
             }
             _close();
         }
         else {
             fmt::print("unknown type: {}\n", &path[trim.length()]);
             w.close();
-            return 1;
+            return -1;
         }
         w.write_u64(SPLIT_SIZE);
         w.write_string(SPLIT_PREFIX.c_str());
@@ -705,20 +710,133 @@ struct PathRecorder {
         return 0;
     }
 
-    int playback(const char * path, bool join_files, bool list_chunks) {
+    struct F {
+        FILE * f;
+        size_t size;
+    };
+
+    static size_t WriteMemoryCallback(void* contents, size_t size, size_t nmemb, void* userp)
+    {
+        F* file = (F*)userp;
+        size_t w = fwrite(contents, size, nmemb, file->f);
+        fflush(file->f);
+        file->size += w;
+        return w;
+    }
+
+    bool is_url(const char* url) {
+        return
+            strstr(url, "https://") == url ||
+            strstr(url, "http://") == url ||
+            strstr(url, "ftp://") == url ||
+            strstr(url, "ftps://") == url;
+    }
+
+    int download_url_(char* url, TempFileFILE & tmp) {
+        CURL* curl = nullptr;
+        char* location = strdup(url);
+        if (location == nullptr) {
+            throw std::bad_alloc();
+        }
+        char* locationNew = location;
+        long response_code = 0;
+        curl = curl_easy_init();
+        F f = { 0 };
+        f.f = tmp.get_handle();
+        if (curl) {
+        LOC:
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L); // enable progress report
+            curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L); // fail on error
+            char errbuf[CURL_ERROR_SIZE] = { 0 };
+            curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errbuf);
+            // cacert.pem
+            curl_easy_setopt(curl, CURLOPT_CAINFO, "cacert.pem");
+            curl_easy_setopt(curl, CURLOPT_URL, location);
+
+            /* send all data to this function  */
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&f);
+
+            /* some servers do not like requests that are made without a user-agent
+               field, so we provide one */
+            curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+            CURLcode res = curl_easy_perform(curl);
+
+            if (res != CURLE_OK) {
+                fmt::print("\ncurl_easy_perform() failed: {}\n{}\n", curl_easy_strerror(res), errbuf);
+                curl_easy_cleanup(curl);
+                free((void*)location);
+                return -1;
+            }
+
+            res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+            if (res != CURLE_OK) {
+                fmt::print("\ncurl_easy_getinfo(CURLINFO_RESPONSE_CODE) failed: {}\n{}\n", curl_easy_strerror(res), errbuf);
+                curl_easy_cleanup(curl);
+                free((void*)location);
+                return -1;
+            }
+
+            if ((response_code / 100) == 3) {
+                res = curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &locationNew);
+                if (res != CURLE_OK) {
+                    fmt::print("\ncurl_easy_getinfo(CURLINFO_REDIRECT_URL) failed: {}\n{}\n", curl_easy_strerror(res), errbuf);
+                    curl_easy_cleanup(curl);
+                    free((void*)location);
+                    return -1;
+                }
+                free((void*)location);
+                location = strdup(locationNew);
+                if (location == nullptr) {
+                    throw std::bad_alloc();
+                }
+                goto LOC;
+            }
+            free((void*)location);
+            fmt::print("downloaded {} bytes -> {}\n", f.size, tmp.get_path());
+        }
+        else {
+            fmt::print("failed to initialize curl\n");
+            return -1;
+        }
+        return 0;
+    }
+
+    int download_url(const char * url, TempFileFILE & tmp) {
+        if (!is_url(url)) {
+            fmt::print("attempting to download a non-url\n");
+            return -1;
+        }
+        CURLcode res = curl_global_init(CURL_GLOBAL_ALL);
+        if (res != CURLE_OK) {
+            fmt::print("curl_global_init() failed: {}\n", curl_easy_strerror(res));
+            return -1;
+        }
+        char* p = strdup(url);
+        int r = download_url_(p, tmp);
+        free((void*)p);
+        curl_global_cleanup();
+        return r;
+    }
+
+    int playback_url(const char* url, bool join_files, bool list_chunks) {
+        remove_files = !join_files; // always remove temporary downloaded temporary files if we are not joining them
         if (join_files) {
             if (path_exists(out_directory)) {
-                if (!std::filesystem::is_directory(out_directory)) {
-                    fmt::print("cannot output to a non-directory: {}\n", out_directory);
-                    return 1;
-                }
-                std::filesystem::directory_iterator begin = std::filesystem::directory_iterator(out_directory);
-                std::filesystem::directory_iterator end;
-                for (; begin != end; begin++) {
-                    auto& fpath = *begin;
-                    if (path_exists(fpath)) {
-                        fmt::print("cannot output to a non-empty directory: {}\n", out_directory);
-                        return 1;
+                if (!dry_run) {
+                    if (!std::filesystem::is_directory(out_directory)) {
+                        fmt::print("cannot output to a non-directory: {}\n", out_directory);
+                        return -1;
+                    }
+                    std::filesystem::directory_iterator begin = std::filesystem::directory_iterator(out_directory);
+                    std::filesystem::directory_iterator end;
+                    for (; begin != end; begin++) {
+                        auto& fpath = *begin;
+                        if (path_exists(fpath)) {
+                            fmt::print("cannot output to a non-empty directory: {}\n", out_directory);
+                            return -1;
+                        }
                     }
                 }
             }
@@ -732,26 +850,33 @@ struct PathRecorder {
             }
         }
 
-        std::filesystem::path p = std::filesystem::path(path);
-        if (!path_exists(p)) {
-            fmt::print("item does not exist: {}\n", path);
-            return 1;
+        TempFileFILE tmp_split_map;
+        tmp_split_map.construct(TempFile::TempDir(), fmt::format("split.map.", TEMP_FILE_OPEN_MODE_READ | TEMP_FILE_OPEN_MODE_WRITE | TEMP_FILE_OPEN_MODE_BINARY), !remove_files);
+        const char* path = tmp_split_map.get_path().c_str();
+        fmt::print("downloading item: {}\n", url);
+        fmt::print("-> path: {}\n", path);
+        if (download_url(url, tmp_split_map) == -1) {
+            fmt::print("failed to download item: {}\n", url);
+            return -1;
         }
+        fmt::print("downloaded item: {}\n", url);
+        fseek(tmp_split_map.get_handle(), 0, SEEK_SET);
+
         auto parent = std::filesystem::canonical(std::filesystem::absolute(path));
         if (!parent.has_parent_path()) {
             fmt::print("cannot obtain parent directory of item: {}\n", parent);
-            return 1;
+            return -1;
         }
         parent = parent.parent_path();
         r.open(path);
-        const char * str = r.read_string();
+        const char* str = r.read_string();
         if (strcmp(str, "BIN_WRITR_MGK") != 0) {
             std::string e = "invalid magic: ";
             e += str;
             fmt::print("{}\n", e);
             free((void*)str);
             r.close();
-            return 1;
+            return -1;
         }
         free((void*)str);
         SPLIT_SIZE = r.read_u64();
@@ -787,7 +912,354 @@ struct PathRecorder {
                         free((void*)SPLIT_PREFIX);
                         free((void*)max_path);
                         free((void*)max_perms);
-                        return 1;
+                        return -1;
+                    }
+                }
+                dirs_vec.emplace_back(std::pair<const char*, std::pair<const char*, std::filesystem::file_time_type::rep>>(dir, std::pair<const char*, std::filesystem::file_time_type::rep>(dir_perms, t)));
+            }
+            else {
+                fmt::print("d{} {} {}\n", dir_perms, 0, dir);
+                free((void*)dir);
+                free((void*)dir_perms);
+            }
+        }
+        fmt::print("reading {} files with a total of {} chunks\n", files, chunks);
+        uintmax_t total = 0;
+        uintmax_t totalc = 0;
+        uintmax_t current_split = 0;
+        bool split_open = false;
+        TempFileFILE * current_tmp_split = nullptr;
+
+        for (uintmax_t i = 0; i < files; i++) {
+            const char* file = r.read_string();
+            const char* file_perms = r.read_string();
+            std::filesystem::file_time_type::rep file_time = (std::filesystem::file_time_type::rep)r.read_u64();
+            uint64_t file_size = r.read_u64();
+            uint64_t file_chunks = r.read_u64();
+            total += file_size;
+
+            if (join_files) {
+                if (dry_run) {
+                    fmt::print("fopen({}/{}, \"wb\")\n", out_directory, file);
+                    for (uintmax_t i = 0; i < file_chunks; i++) {
+                        uintmax_t split = r.read_u64();
+                        if (split != current_split) {
+                            if (split_open) {
+                                fmt::print("fclose({}/split.{}.<TMP_XXXXXX>)\n", parent, current_split);
+                                split_open = false;
+                            }
+                            if (remove_files) {
+                                fmt::print("rm -f {}/split.{}.<TMP_XXXXXX>\n", parent, current_split);
+                            }
+                            current_split = split;
+                        }
+                        if (!split_open) {
+                            char* t = strdup(url);
+                            if (t == nullptr) {
+                                throw std::bad_alloc();
+                            }
+                            strrchr(t, '/')[1] = '\0';
+                            fmt::print("download_url({}{}split.{}) -> {}/split.{}.<TMP_XXXXXX>\n", t, SPLIT_PREFIX, split, parent, split);
+                            free(t);
+                            fmt::print("fopen({}/split.{}.<TMP_XXXXXX>, \"rb\")\n", parent, split);
+                            fmt::print("fseek({}/split.{}.<TMP_XXXXXX>, 0)\n", parent, SPLIT_PREFIX, split);
+                            split_open = true;
+                        }
+                        uintmax_t offset = r.read_u64();
+                        uintmax_t length = r.read_u64();
+                        fmt::print("fread({}/split.{}.<TMP_XXXXXX>, buf, {})\n", parent, split, length);
+                        fmt::print("fwrite({}/{}, buf, {})\n", out_directory, file, length);
+                        totalc += length;
+                    }
+                    fmt::print("fflush({}/{})\n", out_directory, file);
+                    fmt::print("fclose({}/{})\n", out_directory, file);
+                    fmt::print("chmod {: >9} {}/{}\n", file_perms, out_directory, file);
+                }
+                else {
+                    std::string out_f = out_directory + "/" + file;
+                    FILE* f = fopen(out_f.c_str(), "wb");
+                    if (f == nullptr) {
+                        fmt::print("failed to create file: {}\n", out_f);
+                        delete current_tmp_split;
+                        r.close();
+                        free((void*)SPLIT_PREFIX);
+                        free((void*)max_path);
+                        free((void*)max_perms);
+                        return -1;
+                    }
+                    for (uintmax_t i = 0; i < file_chunks; i++) {
+                        uintmax_t split = r.read_u64();
+                        if (split != current_split) {
+                            if (split_open) {
+                                if (!remove_files) {
+                                    current_tmp_split->detach();
+                                }
+                                delete current_tmp_split;
+                                current_tmp_split = nullptr;
+                                split_open = false;
+                            }
+                            current_split = split;
+                        }
+                        if (!split_open) {
+                            char* t = strdup(url);
+                            if (t == nullptr) {
+                                throw std::bad_alloc();
+                            }
+                            strrchr(t, '/')[1] = '\0';
+                            current_tmp_split = new TempFileFILE();
+                            current_tmp_split->construct(TempFile::TempDir(), fmt::format("split.{}.", split), TEMP_FILE_OPEN_MODE_READ | TEMP_FILE_OPEN_MODE_WRITE | TEMP_FILE_OPEN_MODE_BINARY, !remove_files);
+                            std::string out_url = fmt::format("{}{}split.{}", t, SPLIT_PREFIX, split);
+                            fmt::print("downloading item: {}\n", out_url);
+                            auto in_s = current_tmp_split->get_path();
+                            fmt::print("-> path: {}\n", in_s);
+                            if (download_url(out_url.c_str(), *current_tmp_split) == -1) {
+                                fmt::print("failed to download item: {}\n", out_url);
+                                delete current_tmp_split;
+                                current_tmp_split = nullptr;
+                                free(t);
+                                fclose(f);
+                                r.close();
+                                free((void*)SPLIT_PREFIX);
+                                free((void*)max_path);
+                                free((void*)max_perms);
+                                return -1;
+                            }
+                            fmt::print("downloaded item: {}\n", out_url);
+                            free(t);
+                            fseek(current_tmp_split->get_handle(), 0, SEEK_SET);
+                            split_open = true;
+                        }
+                        uintmax_t offset = r.read_u64();
+                        uintmax_t length = r.read_u64();
+                        void* buffer = malloc(length);
+                        if (buffer == nullptr) {
+                            throw std::bad_alloc();
+                        }
+                        fread(buffer, 1, length, current_tmp_split->get_handle());
+                        fwrite(buffer, 1, length, f);
+                        free(buffer);
+                        totalc += length;
+                    }
+                    fflush(f);
+                    fclose(f);
+                    f = nullptr;
+                    std::filesystem::permissions(out_f, permissions_to_filesystem(string_to_permissions(file_perms)));
+                    std::filesystem::last_write_time(out_f, std::filesystem::file_time_type(std::filesystem::file_time_type::duration(file_time)));
+                }
+            }
+            else {
+                if (list_chunks) {
+                    fmt::print(" {} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
+                    for (uintmax_t i = 0; i < file_chunks; i++) {
+                        uintmax_t split = r.read_u64();
+                        uintmax_t offset = r.read_u64();
+                        uintmax_t length = r.read_u64();
+                        fmt::print("   [chunk] {}split.{} [{: >{}}-{: >{}}]\n", SPLIT_PREFIX, split, offset, fmt::formatted_size("{}", SPLIT_SIZE), offset + length, fmt::formatted_size("{}", SPLIT_SIZE));
+                        totalc += length;
+                    }
+                }
+                else {
+                    fmt::print(" {} {: >8}   {}\n", file_perms, file_size, file);
+                    for (uintmax_t i = 0; i < file_chunks; i++) {
+                        uintmax_t split = r.read_u64();
+                        uintmax_t offset = r.read_u64();
+                        uintmax_t length = r.read_u64();
+                        totalc += length;
+                    }
+                }
+            }
+
+            free((void*)file);
+            free((void*)file_perms);
+        }
+        if (join_files) {
+            if (split_open) {
+                if (dry_run) {
+                    fmt::print("fclose({}/split.{}.<TMP_XXXXXX>)\n", parent, current_split);
+                    if (remove_files) {
+                        fmt::print("rm -f {}/split.{}.<TMP_XXXXXX>\n", parent, current_split);
+                    }
+                }
+                else {
+                    if (!remove_files) {
+                        current_tmp_split->detach();
+                    }
+                    delete current_tmp_split;
+                    current_tmp_split = nullptr;
+                }
+                split_open = false;
+            }
+        }
+        fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
+        fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        fmt::print("largest file chunk:   {} {: >8}   ({: >{}} chunks)   {}\n", max_perms, max_size, max_chunk, mfc, max_path);
+        fmt::print("reading {} symlinks\n", symlinks);
+        while (symlinks != 0) {
+            symlinks--;
+
+            const char* symlink = r.read_string();
+            const char* symlink_dest = r.read_string();
+
+            if (join_files) {
+                if (dry_run) {
+                    fmt::print("ln -s {} {}/{}\n", symlink_dest, out_directory, symlink);
+                }
+                else {
+                    std::filesystem::path sp = out_directory + "/" + symlink;
+
+                    // TODO: set symlink permissions for MacOS
+                    //
+                    // TODO: resolve a symlink destination path with account for non-existant path
+                    // 
+                    // attempt to handle the case where some systems require a symlink to
+                    // specify that its target is a directory or a file
+                    //
+                    //if (path_exists(sp)) {
+                    //    fmt::print("symlink destination does not exist: {}\n", parent);
+                    //    r.close();
+                    //    free((void*)SPLIT_PREFIX);
+                    //    free((void*)max_path);
+                    //    free((void*)max_perms);
+                    //    return -1;
+                    //}
+                    //auto parent = sp;
+                    //if (!parent.has_parent_path()) {
+                    //    fmt::print("cannot obtain parent directory of item: {}\n", parent);
+                    //    r.close();
+                    //    free((void*)SPLIT_PREFIX);
+                    //    free((void*)max_path);
+                    //    free((void*)max_perms);
+                    //    return -1;
+                    //}
+                    //parent = parent.parent_path();
+                    //std::filesystem::path t = parent.string() + "/" + symlink_dest;
+                    //std::filesystem::path resolved_t = std::filesystem::weakly_canonical(symlink_dest);
+                    //if (path_exists(resolved_t)) {
+                    //    if (std::filesystem::is_directory(resolved_t)) {
+                    //        std::filesystem::create_directory_symlink(symlink_dest, sp);
+                    //    }
+                    //    else {
+                    //        std::filesystem::create_symlink(symlink_dest, sp);
+                    //    }
+                    //}
+                    //else {
+                    std::filesystem::create_symlink(symlink_dest, sp);
+                    //}
+                }
+            }
+            else {
+                fmt::print(" {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlink_dest);
+            }
+            free((void*)symlink);
+            free((void*)symlink_dest);
+        }
+        if (join_files) {
+            for (auto& dirs : dirs_vec) {
+                if (dry_run) {
+                    fmt::print("chmod {: >9} {}/{}\n", dirs.second.first, out_directory, dirs.first);
+                }
+                else {
+                    std::filesystem::permissions(out_directory + "/" + dirs.first, permissions_to_filesystem(string_to_permissions(dirs.second.first)));
+                    std::filesystem::last_write_time(out_directory + "/" + dirs.first, std::filesystem::file_time_type(std::filesystem::file_time_type::duration(dirs.second.second)));
+                }
+                free((void*)dirs.first);
+                free((void*)dirs.second.first);
+            }
+        }
+        if (!dry_run && !remove_files) {
+            tmp_split_map.detach();
+        }
+        r.close();
+        free((void*)SPLIT_PREFIX);
+        free((void*)max_path);
+        free((void*)max_perms);
+        return 0;
+    }
+    int playback_file(const char * path, bool join_files, bool list_chunks) {
+        if (join_files) {
+            if (path_exists(out_directory)) {
+                if (!dry_run) {
+                    if (!std::filesystem::is_directory(out_directory)) {
+                        fmt::print("cannot output to a non-directory: {}\n", out_directory);
+                        return -1;
+                    }
+                    std::filesystem::directory_iterator begin = std::filesystem::directory_iterator(out_directory);
+                    std::filesystem::directory_iterator end;
+                    for (; begin != end; begin++) {
+                        auto& fpath = *begin;
+                        if (path_exists(fpath)) {
+                            fmt::print("cannot output to a non-empty directory: {}\n", out_directory);
+                            return -1;
+                        }
+                    }
+                }
+            }
+            else {
+                if (dry_run) {
+                    fmt::print("mkdir {}\n", out_directory);
+                }
+                else {
+                    std::filesystem::create_directory(out_directory);
+                }
+            }
+        }
+
+        std::filesystem::path p = std::filesystem::path(path);
+        if (!path_exists(p)) {
+            fmt::print("item does not exist: {}\n", path);
+            return -1;
+        }
+        auto parent = std::filesystem::canonical(std::filesystem::absolute(path));
+        if (!parent.has_parent_path()) {
+            fmt::print("cannot obtain parent directory of item: {}\n", parent);
+            return -1;
+        }
+        parent = parent.parent_path();
+        r.open(path);
+        const char * str = r.read_string();
+        if (strcmp(str, "BIN_WRITR_MGK") != 0) {
+            std::string e = "invalid magic: ";
+            e += str;
+            fmt::print("{}\n", e);
+            free((void*)str);
+            r.close();
+            return -1;
+        }
+        free((void*)str);
+        SPLIT_SIZE = r.read_u64();
+        const char* SPLIT_PREFIX = r.read_string();
+        uint64_t dirs = r.read_u64();
+        uint64_t files = r.read_u64();
+        uint64_t chunks = r.read_u64();
+        uint64_t max_file_chunks = r.read_u64();
+        uint64_t split_number = r.read_u64();
+        size_t mfc = fmt::formatted_size("{}", max_file_chunks);
+        const char* max_path = r.read_string();
+        const char* max_perms = r.read_string();
+        uintmax_t max_size = r.read_u64();
+        uintmax_t max_chunk = r.read_u64();
+        uint64_t symlinks = r.read_u64();
+        fmt::print("reading {} directories\n", dirs);
+        std::vector<std::pair<const char*, std::pair<const char*, std::filesystem::file_time_type::rep>>> dirs_vec;
+        while (dirs != 0) {
+            dirs--;
+
+            const char* dir = r.read_string();
+            const char* dir_perms = r.read_string();
+            std::filesystem::file_time_type::rep t = (std::filesystem::file_time_type::rep)r.read_u64();
+
+            if (join_files) {
+                if (dry_run) {
+                    fmt::print("mkdir {: >9} {}/{}\n", "", out_directory, dir);
+                }
+                else {
+                    if (!std::filesystem::create_directory(out_directory + "/" + dir)) {
+                        fmt::print("failed to create directory: {}/{}\n", out_directory, dir);
+                        r.close();
+                        free((void*)SPLIT_PREFIX);
+                        free((void*)max_path);
+                        free((void*)max_perms);
+                        return -1;
                     }
                 }
                 dirs_vec.emplace_back(std::pair<const char*, std::pair<const char*, std::filesystem::file_time_type::rep>>(dir, std::pair<const char*, std::filesystem::file_time_type::rep>(dir_perms, t)));
@@ -852,7 +1324,7 @@ struct PathRecorder {
                         free((void*)SPLIT_PREFIX);
                         free((void*)max_path);
                         free((void*)max_perms);
-                        return 1;
+                        return -1;
                     }
                     for (uintmax_t i = 0; i < file_chunks; i++) {
                         uintmax_t split = r.read_u64();
@@ -883,7 +1355,7 @@ struct PathRecorder {
                                 free((void*)SPLIT_PREFIX);
                                 free((void*)max_path);
                                 free((void*)max_perms);
-                                return 1;
+                                return -1;
                             }
                             fseek(current_split_file, 0, SEEK_SET);
                             split_open = true;
@@ -892,14 +1364,7 @@ struct PathRecorder {
                         uintmax_t length = r.read_u64();
                         void* buffer = malloc(length);
                         if (buffer == nullptr) {
-                            fmt::print("failed to allocate {} bytes\n", length);
-                            fclose(current_split_file);
-                            fclose(f);
-                            r.close();
-                            free((void*)SPLIT_PREFIX);
-                            free((void*)max_path);
-                            free((void*)max_perms);
-                            return 1;
+                            throw std::bad_alloc();
                         }
                         fread(buffer, 1, length, current_split_file);
                         fwrite(buffer, 1, length, f);
@@ -992,7 +1457,7 @@ struct PathRecorder {
                     //    free((void*)SPLIT_PREFIX);
                     //    free((void*)max_path);
                     //    free((void*)max_perms);
-                    //    return 1;
+                    //    return -1;
                     //}
                     //auto parent = sp;
                     //if (!parent.has_parent_path()) {
@@ -1001,7 +1466,7 @@ struct PathRecorder {
                     //    free((void*)SPLIT_PREFIX);
                     //    free((void*)max_path);
                     //    free((void*)max_perms);
-                    //    return 1;
+                    //    return -1;
                     //}
                     //parent = parent.parent_path();
                     //std::filesystem::path t = parent.string() + "/" + symlink_dest;
@@ -1044,6 +1509,9 @@ struct PathRecorder {
         free((void*)max_perms);
         return 0;
     }
+    int playback(const char* path, bool join_files, bool list_chunks) {
+        return is_url(path) ? playback_url(path, join_files, list_chunks) : playback_file(path, join_files, list_chunks);
+    }
 };
 
 void split_usage() {
@@ -1069,30 +1537,65 @@ void split_usage() {
 }
 
 void join_usage() {
-    fmt::print("\n--join   [-n] [-r] [prefix.]split.map --out <out_dir>\n");
+    fmt::print("\n--join   [-n] [-r] [[prefix.]split.map | [http|https|ftp|ftps]://URL ] --out <out_dir>\n");
     fmt::print("         info\n");
     fmt::print("                 join a split map to restore a directory/file\n");
     fmt::print("         -n\n");
     fmt::print("                 list what would have been done, do not create/modify anything\n");
+    fmt::print("                 if a URL is given, then only the *split.map is downloaded\n");
+    fmt::print("                 if a URL is given, then the downloaded *split.map is automatically\n");
+    fmt::print("                 removed as-if [-r] where given\n");
     fmt::print("         -r\n");
     fmt::print("                 remove each *split.* upon its contents being extracted\n");
-    fmt::print("                 if -n is given, no *split.* files will be removed\n");
+    fmt::print("                 if -n is given, no *split.* files will be removed unless a URL was given\n");
     fmt::print("         [prefix.]\n");
     fmt::print("                 an optional prefix for the split map\n");
+    fmt::print("         [http|https|ftp|ftps]://URL\n");
+    fmt::print("                 a URL to a split.map file hosted online, local path rules apply\n");
+    fmt::print("                   both http and https are accepted\n");
+    fmt::print("                   both ftp and ftps are accepted\n");
+    fmt::print("                   files CANNOT be split against http* and ftp*\n");
+    fmt::print("                   http://url/[prefix.]split.map // usually redirects to https\n");
+    fmt::print("                   https://url/[prefix.]split.map // redirected from http\n");
+    fmt::print("                   https://url/[prefix.]split.0\n");
+    fmt::print("                   https://url/[prefix.]split.1\n");
+    fmt::print("                   https://url/[prefix.]split.2\n");
+    fmt::print("                   ftp://url/[prefix.]split.2 // redirected\n");
+    fmt::print("                   // https://url/[prefix.]split.2 -> ftp://url/[prefix.]split.2\n");
+    fmt::print("                   https://url/[prefix.]split.3\n");
+    fmt::print("                   and so on\n");
+    fmt::print("                   NOTE: the above http/ftp mix cannot occur UNLESS the URL redirects to such\n");
+    fmt::print("                   NOTE: the above http -> ftp redirect does not occur normally and requires\n");
+    fmt::print("                         specific support from the web host/page\n");
     fmt::print("         --out\n");
     fmt::print("                 the directory to restore a directory/file into\n");
     fmt::print("                 defaults to the current directory\n");
 }
 
 void ls_usage() {
-    fmt::print("\n--ls     [prefix.]split.map\n");
+    fmt::print("\n--ls     [[prefix.]split.map | [http|https|ftp|ftps]://URL ]\n");
     fmt::print("         info\n");
     fmt::print("                 list the contents of a split map\n");
     fmt::print("         [prefix.]\n");
     fmt::print("                 an optional prefix for the split map\n");
-    fmt::print("         <out_dir>\n");
-    fmt::print("                 the directory to restore a directory/file into\n");
-    fmt::print("                 defaults to the current directory\n");
+    fmt::print("         [http|https|ftp|ftps]://URL\n");
+    fmt::print("                 a URL to a split.map file hosted online, local path rules apply\n");
+    fmt::print("                 downloaded files are automatically removed as-if [ --join -n ] where used\n");
+    fmt::print("                   both http and https are accepted\n");
+    fmt::print("                   both ftp and ftps are accepted\n");
+    fmt::print("                   files CANNOT be split against http* and ftp*\n");
+    fmt::print("                   http://url/[prefix.]split.map // usually redirects to https\n");
+    fmt::print("                   https://url/[prefix.]split.map // redirected from http\n");
+    fmt::print("                   https://url/[prefix.]split.0\n");
+    fmt::print("                   https://url/[prefix.]split.1\n");
+    fmt::print("                   https://url/[prefix.]split.2\n");
+    fmt::print("                   ftp://url/[prefix.]split.2 // redirected\n");
+    fmt::print("                   // https://url/[prefix.]split.2 -> ftp://url/[prefix.]split.2\n");
+    fmt::print("                   https://url/[prefix.]split.3\n");
+    fmt::print("                   and so on\n");
+    fmt::print("                   NOTE: the above http/ftp mix cannot occur UNLESS the URL redirects to such\n");
+    fmt::print("                   NOTE: the above http -> ftp redirect does not occur normally and requires\n");
+    fmt::print("                         specific support from the web host/page\n");
 }
 
 void usage() {
@@ -1102,15 +1605,13 @@ void usage() {
 }
 
 int main(int argc, const char** argv) {
-    if (argc == 0) {
+    if (argc == 1) {
         usage();
-        return 1;
+        return -1;
     }
-    next_is_help = true;
+    next_is_help = false;
     while (true) {
-        argc--;
-        argv++;
-        if (argc == 0 && next_is_help) {
+        if (next_is_help) {
             if (is_ls) {
                 ls_usage();
             }
@@ -1123,21 +1624,41 @@ int main(int argc, const char** argv) {
             else {
                 usage();
             }
-            return 1;
+            return -1;
         }
+        argc--;
+        argv++;
         next_is_help = false;
         if (command_selected) {
             if (is_ls) {
-                // the next argument must be a dir/file
-                PathRecorder p;
-                return p.playback(argv[0], false, false);
+                if (argc == 0) {
+                    // all arguments must have been met
+                    if (file.length() == 0) {
+                        next_is_help = true;
+                        continue;
+                    }
+                    // the next argument must be a dir/file
+                    PathRecorder p;
+                    return p.playback(file.c_str(), false, false);
+                }
+                // any other arg MIGHT be invalid, show help if explicitly requested
+                if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
+                    next_is_help = true;
+                    continue;
+                }
+                file = std::string(argv[0]);
+                continue;
             }
             else if (is_split) {
                 if (argc == 0) {
                     // all arguments must have been met
+                    if (file.length() == 0) {
+                        next_is_help = true;
+                        continue;
+                    }
                     if (!path_exists(file)) {
                         fmt::print("item does not exist: {}\n", file);
-                        return 1;
+                        return -1;
                     }
                     if (remove_files) {
                         // TODO: make this work for a non-existing symlink
@@ -1153,20 +1674,20 @@ int main(int argc, const char** argv) {
                         if (res == nullptr) {
                             auto se = errno;
                             fmt::print("failed to resolve path of {}\nerrno: -{} ({})\n", p, se, fmt::system_error(se, ""));
-                            return 1;
+                            return -1;
                         }
                         std::string r = std::string(res) + "/" + std::filesystem::path(file).filename().string();
                         free((void*)res);
                         std::filesystem::path target = r;
                         if (current.compare(target) == 0) {
                             fmt::print("cannot remove the current working directory\n");
-                            return 1;
+                            return -1;
                         }
                         else if (current.compare(target) == 1) {
                             while (current.has_parent_path() && current != root) {
                                 if (current.compare(target) == 0) {
                                     fmt::print("cannot remove a parent directory\n");
-                                    return 1;
+                                    return -1;
                                 }
                                 current = current.parent_path();
                             }
@@ -1185,76 +1706,77 @@ int main(int argc, const char** argv) {
                         SPLIT_PREFIX += ".";
                     }
                     next_is_name = false;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (next_is_size) {
                     SPLIT_SIZE = (uintmax_t)atoll(argv[0]);
                     next_is_size = false;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "-n") == 0) {
                     dry_run = true;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "-r") == 0) {
                     remove_files = true;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "--size") == 0) {
                     next_is_size = true;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "--name") == 0) {
                     next_is_name = true;
-                    next_is_help = file.length() == 0;
+                    continue;
+                }
+                // any other arg MIGHT be invalid, show help if explicitly requested
+                if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
+                    next_is_help = true;
                     continue;
                 }
                 file = std::string(argv[0]);
-                next_is_help = file.length() == 0;
                 continue;
             }
             else if (is_join) {
                 if (argc == 0) {
                     // all arguments must have been met
+                    if (file.length() == 0) {
+                        next_is_help = true;
+                        continue;
+                    }
+                    if (out_directory.length() == 0) {
+                        out_directory = ".";
+                    }
                     PathRecorder p;
                     return p.playback(file.c_str(), true, true);
                 }
                 if (next_is_name) {
                     out_directory = std::string(argv[0]);
-                    if (out_directory.length() == 0) {
-                        out_directory = ".";
-                    }
                     next_is_name = false;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "-n") == 0) {
                     dry_run = true;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "-r") == 0) {
                     remove_files = true;
-                    next_is_help = file.length() == 0;
                     continue;
                 }
                 if (strcmp(argv[0], "--out") == 0) {
                     next_is_name = true;
-                    next_is_help = file.length() == 0;
+                    continue;
+                }
+                // any other arg MIGHT be invalid, show help if explicitly requested
+                if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
+                    next_is_help = true;
                     continue;
                 }
                 file = std::string(argv[0]);
-                next_is_help = file.length() == 0;
                 continue;
             }
         }
         else {
-            next_is_help = true;
             if (strcmp(argv[0], "--ls") == 0) {
                 is_ls = true;
                 command_selected = true;
@@ -1270,6 +1792,12 @@ int main(int argc, const char** argv) {
                 command_selected = true;
                 continue;
             }
+            if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
+                next_is_help = true;
+                continue;
+            }
+            // any other arg is invalid, show help
+            next_is_help = true;
         }
     }
     return 0;

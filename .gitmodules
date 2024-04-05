@@ -1,3 +1,6 @@
-[submodule "fmt"]
-	path = fmt
-	url = https://github.com/fmtlib/fmt
+[submodule "deps/tmpfile"]
+	path = deps/tmpfile
+	url = https://github.com/mgood7123/tempfile
+[submodule "deps/curl"]
+	path = deps/curl
+	url = https://github.com/curl/curl
