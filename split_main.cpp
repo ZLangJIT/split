@@ -834,7 +834,9 @@ struct PathRecorder {
     }
 
     int playback_url(const char* url, bool join_files, bool list_chunks) {
-        remove_files = !join_files; // always remove temporary downloaded temporary files if we are not joining them
+        if (!join_files) {
+            remove_files = true; // remove temporary downloaded temporary files if we are not joining them
+        }
         if (join_files) {
             if (path_exists(out_directory)) {
                 if (!dry_run) {
