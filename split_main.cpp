@@ -36,6 +36,7 @@ bool remove_files = false;
 bool next_is_size = false;
 bool next_is_name = false;
 bool next_is_help = true;
+int  next_ret = -1; // zero if -h or --help was explicitly specified
 std::string file;
 std::string out_directory;
 
@@ -1613,7 +1614,7 @@ void usage() {
 int main(int argc, const char** argv) {
     if (argc == 1) {
         usage();
-        return -1;
+        return 0;
     }
     next_is_help = false;
     while (true) {
@@ -1630,7 +1631,7 @@ int main(int argc, const char** argv) {
             else {
                 usage();
             }
-            return -1;
+            return next_ret;
         }
         argc--;
         argv++;
@@ -1650,6 +1651,7 @@ int main(int argc, const char** argv) {
                 // any other arg MIGHT be invalid, show help if explicitly requested
                 if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
                     next_is_help = true;
+                    next_ret = 0;
                     continue;
                 }
                 file = std::string(argv[0]);
@@ -1738,6 +1740,7 @@ int main(int argc, const char** argv) {
                 // any other arg MIGHT be invalid, show help if explicitly requested
                 if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
                     next_is_help = true;
+                    next_ret = 0;
                     continue;
                 }
                 file = std::string(argv[0]);
@@ -1776,6 +1779,7 @@ int main(int argc, const char** argv) {
                 // any other arg MIGHT be invalid, show help if explicitly requested
                 if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
                     next_is_help = true;
+                    next_ret = 0;
                     continue;
                 }
                 file = std::string(argv[0]);
@@ -1800,6 +1804,7 @@ int main(int argc, const char** argv) {
             }
             if (strcmp(argv[0], "-h") == 0 || strcmp(argv[0], "--help") == 0) {
                 next_is_help = true;
+                next_ret = 0;
                 continue;
             }
             // any other arg is invalid, show help
