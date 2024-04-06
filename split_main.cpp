@@ -938,7 +938,7 @@ struct PathRecorder {
                 free((void*)dir_perms);
             }
         }
-        fmt::print("reading {} files with a total of {} chunks\n", files, chunks);
+        fmt::print("reading {} files with a total of {} split files consisting of {} chunks\n", files, split_number, chunks);
         uintmax_t total = 0;
         uintmax_t totalc = 0;
         uintmax_t current_split = 0;
@@ -1285,7 +1285,7 @@ struct PathRecorder {
                 free((void*)dir_perms);
             }
         }
-        fmt::print("reading {} files with a total of {} chunks\n", files, chunks);
+        fmt::print("reading {} files with a total of {} split files consisting of {} chunks\n", files, split_number, chunks);
         uintmax_t total = 0;
         uintmax_t totalc = 0;
         uintmax_t current_split = 0;
