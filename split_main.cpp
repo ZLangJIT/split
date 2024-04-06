@@ -409,13 +409,16 @@ struct PathRecorder {
             return -1;
         }
         if (is_directory(st)) {
+            fmt::print("packing directory: {}\n", path);
             DirInfo di;
             di.path = path;
             di.perms = permissions_to_string(st);
             di.write_time = std::filesystem::last_write_time(path).time_since_epoch().count();
             bird_is_the_word_d.emplace_back(di);
+            fmt::print("packed directory: {}\n", path);
         }
         else if (is_reg(st)) {
+            fmt::print("packing file: {}\n", path);
             std::vector<ChunkInfo> file_chunks;
             uintmax_t s = std::filesystem::file_size(path);
             total += s;
@@ -516,8 +519,10 @@ struct PathRecorder {
             file_info.file_size = file_size;
             file_info.file_chunks = std::move(file_chunks);
             bird_is_the_word_f.emplace_back(std::move(file_info));
+            fmt::print("packed file: {}\n", path);
         }
         else if (is_symlink(st)) {
+            fmt::print("packing symlink: {}\n", path);
             auto dest = get_symlink_dest(path);
             if (remove_files) {
                 if (dry_run) {
@@ -538,6 +543,7 @@ struct PathRecorder {
             si.path = path;
             si.dest = dest;
             bird_is_the_word_s.emplace_back(si);
+            fmt::print("packed symlink: {}\n", path);
         }
         else {
             auto s = path.string();
