@@ -705,6 +705,8 @@ struct PathRecorder {
             recordPathSymlink(s);
         }
         w.close();
+        fmt::print("split size:           {}\n", SPLIT_SIZE);
+        fmt::print("split prefix:         {}\n", SPLIT_PREFIX);
         fmt::print("directories recorded: {}\n", bird_is_the_word_d.size());
         fmt::print("files recorded:       {}\n", bird_is_the_word_f.size());
         fmt::print("chunks recorded:      {}\n", total_chunk_count);
