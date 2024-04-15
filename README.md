@@ -1,7 +1,7 @@
 # Split
 a directory / file splitter designed to split a file or a directory into fixed sized chunks
 
-# compiler preprocessor defines
+### compiler preprocessor defines
 
 ```sh
 # list all macro's predefined by gcc
