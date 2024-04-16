@@ -710,7 +710,7 @@ struct PathRecorder {
         fmt::print("directories recorded: {}\n", bird_is_the_word_d.size());
         fmt::print("files recorded:       {}\n", bird_is_the_word_f.size());
         fmt::print("chunks recorded:      {}\n", total_chunk_count);
-        fmt::print("split files recorded: {}\n", split_number);
+        fmt::print("split files recorded: {}\n", split_number+1);
         fmt::print("symlinks recorded:    {}\n", bird_is_the_word_s.size());
         fmt::print("unknown types:        {}\n", unknowns);
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)));
@@ -940,7 +940,7 @@ struct PathRecorder {
                 free((void*)dir_perms);
             }
         }
-        fmt::print("reading {} files with a total of {} split files consisting of {} chunks\n", files, split_number, chunks);
+        fmt::print("reading {} files with a total of {} split files consisting of {} chunks\n", files, split_number+1, chunks);
         uintmax_t total = 0;
         uintmax_t totalc = 0;
         uintmax_t current_split = 0;
@@ -1287,7 +1287,7 @@ struct PathRecorder {
                 free((void*)dir_perms);
             }
         }
-        fmt::print("reading {} files with a total of {} split files consisting of {} chunks\n", files, split_number, chunks);
+        fmt::print("reading {} files with a total of {} split files consisting of {} chunks\n", files, split_number+1, chunks);
         uintmax_t total = 0;
         uintmax_t totalc = 0;
         uintmax_t current_split = 0;
