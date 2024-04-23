@@ -488,12 +488,12 @@ struct PathRecorder {
                 f = nullptr;
             }
             total_chunk_count += file_chunks.size();
-            max_file_chunks = std::max(max_file_chunks, file_chunks.size());
-            uint64_t file_size = std::filesystem::file_size(path);
-            if (max_file_chunks == file_chunks.size()) {
+            uint64_t current_file_chunks = file_chunks.size();
+            uint64_t current_file_size = std::filesystem::file_size(path);
+            if (max_file_chunks <= current_file_chunks && max_size <= current_chunk_size) {
                 max_path = std::string(&ps[trim.length()]);
-                max_size = file_size;
-                max_chunk = max_file_chunks;
+                max_size = current_file_size;
+                max_chunk = current_file_chunks;
                 max_perms = st.st_mode;
                 max_perms_str = permissions_to_string(st);
             }
@@ -515,7 +515,7 @@ struct PathRecorder {
             file_info.path = path;
             file_info.perms = permissions_to_string(st);
             file_info.write_time = file_time;
-            file_info.file_size = file_size;
+            file_info.file_size = current_file_size;
             file_info.file_chunks = std::move(file_chunks);
             bird_is_the_word_f.emplace_back(std::move(file_info));
         }
