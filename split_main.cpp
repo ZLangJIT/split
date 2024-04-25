@@ -33,6 +33,7 @@ bool is_join = false;
 bool command_selected = false;
 bool dry_run = false;
 bool remove_files = false;
+bool verbose_files = false;
 bool next_is_size = false;
 bool next_is_name = false;
 bool next_is_help = true;
@@ -409,7 +410,7 @@ struct PathRecorder {
             return -1;
         }
         if (is_directory(st)) {
-            fmt::print("packing directory: {}\n", path);
+            if (verbose_files) fmt::print("packing directory: {}\n", path);
             DirInfo di;
             di.path = path;
             di.perms = permissions_to_string(st);
@@ -417,7 +418,7 @@ struct PathRecorder {
             bird_is_the_word_d.emplace_back(di);
         }
         else if (is_reg(st)) {
-            fmt::print("packing file: {}\n", path);
+            if (verbose_files) fmt::print("packing file: {}\n", path);
             std::vector<ChunkInfo> file_chunks;
             uintmax_t s = std::filesystem::file_size(path);
             total += s;
@@ -520,7 +521,7 @@ struct PathRecorder {
             bird_is_the_word_f.emplace_back(std::move(file_info));
         }
         else if (is_symlink(st)) {
-            fmt::print("packing symlink: {}\n", path);
+            if (verbose_files) fmt::print("packing symlink: {}\n", path);
             auto dest = get_symlink_dest(path);
             if (remove_files) {
                 if (dry_run) {
@@ -920,6 +921,7 @@ struct PathRecorder {
                     fmt::print("mkdir {: >9} {}/{}\n", "", out_directory, dir);
                 }
                 else {
+                    if (verbose_files) fmt::print("unpacking directory: {}/{}\n", out_directory, dir);
                     if (!std::filesystem::create_directory(out_directory + "/" + dir)) {
                         fmt::print("failed to create directory: {}/{}\n", out_directory, dir);
                         r.close();
@@ -990,6 +992,7 @@ struct PathRecorder {
                     fmt::print("chmod {: >9} {}/{}\n", file_perms, out_directory, file);
                 }
                 else {
+                    if (verbose_files) fmt::print("unpacking file: {}/{}\n", out_directory, file);
                     std::string out_f = out_directory + "/" + file;
                     FILE* f = fopen(out_f.c_str(), "wb");
                     if (f == nullptr) {
@@ -1119,6 +1122,7 @@ struct PathRecorder {
                     fmt::print("ln -s {} {}/{}\n", symlink_dest, out_directory, symlink);
                 }
                 else {
+                    if (verbose_files) fmt::print("unpacking symlink: {}/{}\n", out_directory, symlink);
                     std::filesystem::path sp = out_directory + "/" + symlink;
 
                     // TODO: set symlink permissions for MacOS
@@ -1267,6 +1271,7 @@ struct PathRecorder {
                     fmt::print("mkdir {: >9} {}/{}\n", "", out_directory, dir);
                 }
                 else {
+                    if (verbose_files) fmt::print("unpacking directory: {}/{}\n", out_directory, dir);
                     if (!std::filesystem::create_directory(out_directory + "/" + dir)) {
                         fmt::print("failed to create directory: {}/{}\n", out_directory, dir);
                         r.close();
@@ -1330,6 +1335,7 @@ struct PathRecorder {
                     fmt::print("chmod {: >9} {}/{}\n", file_perms, out_directory, file);
                 }
                 else {
+                    if (verbose_files) fmt::print("unpacking file: {}/{}\n", out_directory, file);
                     std::string out_f = out_directory + "/" + file;
                     FILE * f = fopen(out_f.c_str(), "wb");
                     if (f == nullptr) {
@@ -1456,6 +1462,7 @@ struct PathRecorder {
                     fmt::print("ln -s {} {}/{}\n", symlink_dest, out_directory, symlink);
                 }
                 else {
+                    if (verbose_files) fmt::print("unpacking symlink: {}/{}\n", out_directory, symlink);
                     std::filesystem::path sp = out_directory + "/" + symlink;
 
                     // TODO: set symlink permissions for MacOS
@@ -1539,6 +1546,8 @@ void split_usage() {
     fmt::print("         -r\n");
     fmt::print("                 remove each directory/file upon being stored\n");
     fmt::print("                 if -n is given, no directories/files will be removed\n");
+    fmt::print("         -v\n");
+    fmt::print("                 list each item as it is processed\n");
     fmt::print("         --size\n");
     fmt::print("                 specifies the split size, the default is 4 MB\n");
     fmt::print("                 if a value of zero is specified then the default of 4 MB is used\n");
@@ -1562,6 +1571,8 @@ void join_usage() {
     fmt::print("         -r\n");
     fmt::print("                 remove each *split.* upon its contents being extracted\n");
     fmt::print("                 if -n is given, no *split.* files will be removed unless a URL was given\n");
+    fmt::print("         -v\n");
+    fmt::print("                 list each item as it is processed\n");
     fmt::print("         [prefix.]\n");
     fmt::print("                 an optional prefix for the split map\n");
     fmt::print("         [http|https|ftp|ftps]://URL\n");
@@ -1736,6 +1747,10 @@ int main(int argc, const char** argv) {
                     remove_files = true;
                     continue;
                 }
+                if (strcmp(argv[0], "-v") == 0) {
+                    verbose_files = true;
+                    continue;
+                }
                 if (strcmp(argv[0], "--size") == 0) {
                     next_is_size = true;
                     continue;
@@ -1777,6 +1792,10 @@ int main(int argc, const char** argv) {
                 }
                 if (strcmp(argv[0], "-r") == 0) {
                     remove_files = true;
+                    continue;
+                }
+                if (strcmp(argv[0], "-v") == 0) {
+                    verbose_files = true;
                     continue;
                 }
                 if (strcmp(argv[0], "--out") == 0) {
