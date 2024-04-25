@@ -554,7 +554,7 @@ struct PathRecorder {
     void recordPathDirectory(const DirInfo & dirInfo) {
         auto s = dirInfo.path.string();
         const char* dir = &s[trim.length()];
-        fmt::print("recording directory: d{} {: >8}   {}\n", dirInfo.perms, 0, dir);
+        if (verbose_files) fmt::print("recording directory: d{} {: >8}   {}\n", dirInfo.perms, 0, dir);
         w.write_string(&s[trim.length()]);
         w.write_string(dirInfo.perms.c_str());
         w.write_u64(dirInfo.write_time);
@@ -565,7 +565,7 @@ struct PathRecorder {
         const char* file = &s[trim.length()];
         uint64_t file_chunks = fileInfo.file_chunks.size();
 
-        fmt::print("recording file:       {} {: >8}   ({: >{}} chunks)   {}\n", fileInfo.perms, fileInfo.file_size, file_chunks, mfc, file);
+        if (verbose_files) fmt::print("recording file:       {} {: >8}   ({: >{}} chunks)   {}\n", fileInfo.perms, fileInfo.file_size, file_chunks, mfc, file);
 
         w.write_string(file);
         w.write_string(fileInfo.perms.c_str());
@@ -583,7 +583,7 @@ struct PathRecorder {
         auto s = symlinkInfo.path.string();
         const char* symlink = &s[trim.length()];
 
-        fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlinkInfo.dest);
+        if (verbose_files) fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlinkInfo.dest);
 
         w.write_string(symlink);
         w.write_string(symlinkInfo.dest.c_str());
