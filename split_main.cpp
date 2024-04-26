@@ -774,7 +774,11 @@ struct PathRecorder {
                field, so we provide one */
             curl_easy_setopt(curl, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
+            fflush(stdout);
+            fflush(stderr);
             CURLcode res = curl_easy_perform(curl);
+            fflush(stdout);
+            fflush(stderr);
 
             if (res != CURLE_OK) {
                 fmt::print("\ncurl_easy_perform() failed: {}\n{}\n", curl_easy_strerror(res), errbuf);
