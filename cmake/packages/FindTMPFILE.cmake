@@ -41,6 +41,11 @@ find_package_handle_standard_args(TMPFILE
                                     TMPFILE_VERSION_STRING)
 mark_as_advanced(TMPFILE_INCLUDE_DIRS TMPFILE_LIBRARIES)
 
+message(STATUS "TmpFile: found :        ${TMPFILE_FOUND}")
+message(STATUS "TmpFile: include_dirs : ${TMPFILE_INCLUDE_DIRS}")
+message(STATUS "TmpFile: lib :          ${TMPFILE_LIBRARIES}")
+message(STATUS "TmpFile: version :      ${TMPFILE_VERSION_STRING}")
+
 if (TMPFILE_FOUND AND NOT TARGET LLVM_STATIC_TMPFILE)
   add_library(LLVM_STATIC_TMPFILE UNKNOWN IMPORTED)
   set_target_properties(LLVM_STATIC_TMPFILE PROPERTIES

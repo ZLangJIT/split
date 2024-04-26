@@ -41,6 +41,11 @@ find_package_handle_standard_args(Curl
                                     CURL_VERSION_STRING)
 mark_as_advanced(CURL_INCLUDE_DIRS CURL_LIBRARIES)
 
+message(STATUS "Curl: found :        ${CURL_FOUND}")
+message(STATUS "Curl: include_dirs : ${CURL_INCLUDE_DIRS}")
+message(STATUS "Curl: lib :          ${CURL_LIBRARIES}")
+message(STATUS "Curl: version :      ${CURL_VERSION_STRING}")
+
 if (CURL_FOUND AND NOT TARGET LLVM_STATIC_CURL)
   add_library(LLVM_STATIC_CURL UNKNOWN IMPORTED)
   set_target_properties(LLVM_STATIC_CURL PROPERTIES

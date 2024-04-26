@@ -233,7 +233,7 @@ bool is_symlink(const std::filesystem::path& path) {
 
 std::string permissions_to_string(const struct stat& st) {
     char s[11];
-    s[0] = is_directory(st) == S_IFDIR ? 'd' : '-';
+    s[0] = is_directory(st) ? 'd' : is_symlink(st) ? 'l' : '-';
     s[1] = (st.st_mode & S_IRUSR) == S_IRUSR ? 'r' : '-';
     s[2] = (st.st_mode & S_IWUSR) == S_IWUSR ? 'w' : '-';
     s[3] = (st.st_mode & S_IXUSR) == S_IXUSR ? 'x' : '-';
@@ -249,7 +249,7 @@ std::string permissions_to_string(const struct stat& st) {
 
 struct stat string_to_permissions(const char * s) {
     struct stat st;
-    st.st_mode |= s[0] == 'd' ? S_IFDIR : 0;
+    st.st_mode |= s[0] == 'd' ? S_IFDIR : s[0] == 'l' ? S_IFLNK : S_IFREG;
     st.st_mode |= s[1] == 'r' ? S_IRUSR : 0;
     st.st_mode |= s[2] == 'w' ? S_IWUSR : 0;
     st.st_mode |= s[3] == 'x' ? S_IXUSR : 0;
@@ -491,7 +491,7 @@ struct PathRecorder {
             total_chunk_count += file_chunks.size();
             uint64_t current_file_chunks = file_chunks.size();
             uint64_t current_file_size = std::filesystem::file_size(path);
-            if (max_file_chunks <= current_file_chunks && max_size <= current_chunk_size) {
+            if (current_file_size >= max_size) {
                 max_path = std::string(&ps[trim.length()]);
                 max_size = current_file_size;
                 max_chunk = current_file_chunks;
@@ -551,10 +551,10 @@ struct PathRecorder {
         return 0;
     }
 
-    void recordPathDirectory(const DirInfo & dirInfo) {
+    void recordPathDirectory(const DirInfo & dirInfo, const size_t& mfc) {
         auto s = dirInfo.path.string();
         const char* dir = &s[trim.length()];
-        if (verbose_files) fmt::print("recording directory: d{} {: >8}   {}\n", dirInfo.perms, 0, dir);
+        if (verbose_files) fmt::print("recording directory: {} {: >8}   ({: >{}} chunks)   {}\n", dirInfo.perms, 0, 0, mfc, dir);
         w.write_string(&s[trim.length()]);
         w.write_string(dirInfo.perms.c_str());
         w.write_u64(dirInfo.write_time);
@@ -565,7 +565,7 @@ struct PathRecorder {
         const char* file = &s[trim.length()];
         uint64_t file_chunks = fileInfo.file_chunks.size();
 
-        if (verbose_files) fmt::print("recording file:       {} {: >8}   ({: >{}} chunks)   {}\n", fileInfo.perms, fileInfo.file_size, file_chunks, mfc, file);
+        if (verbose_files) fmt::print("recording file:      {} {: >8}   ({: >{}} chunks)   {}\n", fileInfo.perms, fileInfo.file_size, file_chunks, mfc, file);
 
         w.write_string(file);
         w.write_string(fileInfo.perms.c_str());
@@ -579,11 +579,11 @@ struct PathRecorder {
         }
     }
 
-    void recordPathSymlink(const SymlinkInfo& symlinkInfo) {
+    void recordPathSymlink(const SymlinkInfo& symlinkInfo, const size_t& mfc) {
         auto s = symlinkInfo.path.string();
         const char* symlink = &s[trim.length()];
 
-        if (verbose_files) fmt::print("recording symlink:    {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlinkInfo.dest);
+        if (verbose_files) fmt::print("recording symlink:   {} {: >8}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, 0, mfc, symlink, symlinkInfo.dest);
 
         w.write_string(symlink);
         w.write_string(symlinkInfo.dest.c_str());
@@ -694,13 +694,13 @@ struct PathRecorder {
             }
         }
         for (auto& d : bird_is_the_word_d) {
-            recordPathDirectory(d);
+            recordPathDirectory(d, mfc);
         }
         for (auto& f : bird_is_the_word_f) {
             recordPathFile(f, mfc);
         }
         for (auto& s : bird_is_the_word_s) {
-            recordPathSymlink(s);
+            recordPathSymlink(s, mfc);
         }
         w.close();
         fmt::print("split size:           {}\n", SPLIT_SIZE);
@@ -713,7 +713,7 @@ struct PathRecorder {
         fmt::print("unknown types:        {}\n", unknowns);
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)));
         fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("largest file chunk:   {} {: >8}   ({: >{}} chunks)   {}\n", max_perms_str, max_size, max_chunk, mfc, max_path);
+        fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), max_perms_str, max_size, max_chunk, mfc, max_path);
         return 0;
     }
 
@@ -938,7 +938,7 @@ struct PathRecorder {
                 dirs_vec.emplace_back(std::pair<const char*, std::pair<const char*, std::filesystem::file_time_type::rep>>(dir, std::pair<const char*, std::filesystem::file_time_type::rep>(dir_perms, t)));
             }
             else {
-                fmt::print("d{} {} {}\n", dir_perms, 0, dir);
+                fmt::print("{} {: >8}   ({: >{}} chunks)   {}\n", dir_perms, 0, 0, mfc, dir);
                 free((void*)dir);
                 free((void*)dir_perms);
             }
@@ -1070,7 +1070,7 @@ struct PathRecorder {
             }
             else {
                 if (list_chunks) {
-                    fmt::print(" {} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
+                    fmt::print("{} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
                     for (uintmax_t i = 0; i < file_chunks; i++) {
                         uintmax_t split = r.read_u64();
                         uintmax_t offset = r.read_u64();
@@ -1080,7 +1080,7 @@ struct PathRecorder {
                     }
                 }
                 else {
-                    fmt::print(" {} {: >8}   {}\n", file_perms, file_size, file);
+                    fmt::print("{} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
                     for (uintmax_t i = 0; i < file_chunks; i++) {
                         uintmax_t split = r.read_u64();
                         uintmax_t offset = r.read_u64();
@@ -1113,7 +1113,7 @@ struct PathRecorder {
         }
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
         fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("largest file chunk:   {} {: >8}   ({: >{}} chunks)   {}\n", max_perms, max_size, max_chunk, mfc, max_path);
+        fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(files, chunks)), max_perms, max_size, max_chunk, mfc, max_path);
         fmt::print("reading {} symlinks\n", symlinks);
         while (symlinks != 0) {
             symlinks--;
@@ -1170,7 +1170,7 @@ struct PathRecorder {
                 }
             }
             else {
-                fmt::print(" {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlink_dest);
+                fmt::print("{} {: >8}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, 0, mfc, symlink, symlink_dest);
             }
             free((void*)symlink);
             free((void*)symlink_dest);
@@ -1288,7 +1288,7 @@ struct PathRecorder {
                 dirs_vec.emplace_back(std::pair<const char*, std::pair<const char*, std::filesystem::file_time_type::rep>>(dir, std::pair<const char*, std::filesystem::file_time_type::rep>(dir_perms, t)));
             }
             else {
-                fmt::print("d{} {} {}\n", dir_perms, 0, dir);
+                fmt::print("{} {: >8}   ({: >{}} chunks)   {}\n", dir_perms, 0, 0, mfc, dir);
                 free((void*)dir);
                 free((void*)dir_perms);
             }
@@ -1404,7 +1404,7 @@ struct PathRecorder {
             }
             else {
                 if (list_chunks) {
-                    fmt::print(" {} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
+                    fmt::print("{} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
                     for (uintmax_t i = 0; i < file_chunks; i++) {
                         uintmax_t split = r.read_u64();
                         uintmax_t offset = r.read_u64();
@@ -1414,7 +1414,7 @@ struct PathRecorder {
                     }
                 }
                 else {
-                    fmt::print(" {} {: >8}   {}\n", file_perms, file_size, file);
+                    fmt::print("{} {: >8}   ({: >{}} chunks)   {}\n", file_perms, file_size, file_chunks, mfc, file);
                     for (uintmax_t i = 0; i < file_chunks; i++) {
                         uintmax_t split = r.read_u64();
                         uintmax_t offset = r.read_u64();
@@ -1453,7 +1453,7 @@ struct PathRecorder {
         }
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
         fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("largest file chunk:   {} {: >8}   ({: >{}} chunks)   {}\n", max_perms, max_size, max_chunk, mfc, max_path);
+        fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(files, chunks)), max_perms, max_size, max_chunk, mfc, max_path);
         fmt::print("reading {} symlinks\n", symlinks);
         while (symlinks != 0) {
             symlinks--;
@@ -1510,7 +1510,7 @@ struct PathRecorder {
                 }
             }
             else {
-                fmt::print(" {: >9} {: >8}   {} -> {}\n", "", 0, symlink, symlink_dest);
+                fmt::print("{} {: >8}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, 0, mfc, symlink, symlink_dest);
             }
             free((void*)symlink);
             free((void*)symlink_dest);

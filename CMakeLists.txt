@@ -16,6 +16,8 @@ include(./build_root.cmake)
 
 build_root_init(${CMAKE_CURRENT_SOURCE_DIR}/cmake/packages ${CMAKE_CURRENT_BINARY_DIR}/BUILD_ROOT)
 
+if (false)
+
 # tmpfile does not depend on any libs
 build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/tmpfile . tmpfile
     "" # no extra c flags
@@ -43,8 +45,8 @@ build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl-cmake . op
     "
 )
 
-# curl depends on openssl
-build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/curl . curl
+# zlib does not depend on any libs
+build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/zlib . zlib
     "" # no extra c flags
     "" # no extra cxx flags
     "
@@ -52,7 +54,18 @@ build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/curl . curl
     "
 )
 
+# curl depends on openssl and zlib
+build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/curl . curl
+    "" # no extra c flags
+    "" # no extra cxx flags
+    "
+      -D BUILD_SHARED_LIBS=OFF
+    "
+)
+endif()
+
 find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
 find_package(Curl REQUIRED)
 find_package(Fmt REQUIRED)
 find_package(TMPFILE REQUIRED)
@@ -62,7 +75,7 @@ target_compile_definitions(split PUBLIC "NOMINMAX")
 target_include_directories(split PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_directories(split PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(split PRIVATE ${CURL_TARGET} ${OPENSSL_TARGET} ${OPENSSL_CRYPTO_TARGET} ${FMT_TARGET} ${TMPFILE_TARGET})
+target_link_libraries(split PRIVATE ${CURL_TARGET} ${ZLIB_TARGET} ${OPENSSL_TARGET} ${OPENSSL_CRYPTO_TARGET} ${FMT_TARGET} ${TMPFILE_TARGET})
 target_link_options(split PRIVATE -static)
 
 set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "Installation directory for executables")

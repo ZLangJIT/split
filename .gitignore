@@ -2,3 +2,5 @@
 /*split.*
 /.vs
 /out
+/BUILD_*
+

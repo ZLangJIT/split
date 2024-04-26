@@ -41,6 +41,11 @@ find_package_handle_standard_args(Fmt
                                     FMT_VERSION_STRING)
 mark_as_advanced(FMT_INCLUDE_DIRS FMT_LIBRARIES)
 
+message(STATUS "FMT: found :        ${FMT_FOUND}")
+message(STATUS "FMT: include_dirs : ${FMT_INCLUDE_DIRS}")
+message(STATUS "FMT: lib :          ${FMT_LIBRARIES}")
+message(STATUS "FMT: version :      ${FMT_VERSION_STRING}")
+
 if (FMT_FOUND AND NOT TARGET LLVM_STATIC_FMT)
   add_library(LLVM_STATIC_FMT UNKNOWN IMPORTED)
   set_target_properties(LLVM_STATIC_FMT PROPERTIES
