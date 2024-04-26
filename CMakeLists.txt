@@ -16,7 +16,7 @@ include(./build_root.cmake)
 
 build_root_init(${CMAKE_CURRENT_SOURCE_DIR}/cmake/packages ${CMAKE_CURRENT_BINARY_DIR}/BUILD_ROOT)
 
-if (false)
+if (true)
 
 # tmpfile does not depend on any libs
 build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/tmpfile . tmpfile
