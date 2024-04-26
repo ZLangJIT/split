@@ -1,7 +1,48 @@
 # Split
 a directory / file splitter designed to split a file or a directory into fixed sized chunks
 
-### compiler preprocessor defines
+# features
+
+## quick
+- splits a file or directory into X sized chunks
+- stores the `dictionary info` in a separate file
+- can download an archive via a URL with plain-text unencrypted format
+- CANNOT upload archives for numerous reasons
+
+## full
+- splits a file or directory into X sized chunks
+    ```
+    [a.txt b.txt c.txt] chunk 1
+    [e.txt f.mp3 g.ts i.lib o.r] chunk 2
+    and so on
+    ```
+  - most archival programs do not do this
+    - the only ones that can are
+      - WinRAR
+        - (closed source)
+      - 7Zip
+        - (Open Source but not many api examples)
+- stores the `dictionary info` in a separate file
+  - this allows rapid listing of large archives by downloading only a small dictionary file that lists the content of the archive
+  - this also allows efficient serialization of files since we need not include any metadata in the chunks
+  - this also allows 1 byte sized chunks if desired
+  - as far as i know, no archival program can do this
+- can download an archive via a URL with plain-text unencrypted format
+  ```
+  https://.../split.map
+  https://.../split.0
+  ...
+  ```
+  - as far as i know, no archival program can do this
+- CANNOT upload archives for numerous reasons
+  - storage services usually have their own file upload api's and we cannot magically handle all of them
+
+# TODO
+- specific file(s)/directory(s) extraction
+  - due to the split system, it is possible to scan the metadata map to compute which chunks are required to extract a specific file(s)/directory(s), and then only download those required chunks
+    - this can drastically reduce download time since the entire archive would not need to be downloaded just to extract a single file
+
+### compiler preprocessor defines (ignore this)
 
 ```sh
 # list all macro's predefined by gcc
@@ -45,6 +86,8 @@ $ ./build/split.exe
          -r
                  remove each directory/file upon being stored
                  if -n is given, no directories/files will be removed
+         -v
+                 list each item as it is processed
          --size
                  specifies the split size, the default is 4 MB
                  if a value of zero is specified then the default of 4 MB is used
@@ -66,6 +109,8 @@ $ ./build/split.exe
          -r
                  remove each *split.* upon its contents being extracted
                  if -n is given, no *split.* files will be removed unless a URL was given
+         -v
+                 list each item as it is processed
          [prefix.]
                  an optional prefix for the split map
          [http|https|ftp|ftps]://URL
