@@ -27,6 +27,83 @@
 uintmax_t SPLIT_SIZE;
 std::string SPLIT_PREFIX;
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/std.h>
+
+#include <stdio.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <string.h>
+#include <stdlib.h>
+
+#define HUMAN_READABLE_MAX_WIDTH      7  /* "1024.0G" */
+#define HUMAN_READABLE_MAX_WIDTH_STR "7"
+
+std::string make_human_readable_str(unsigned long long val) {
+    if (val == 0) return "0";
+    if (val < 1000) {
+        return fmt::format("{}", val);
+    }
+    else if (val < 1024) {
+        unsigned long long remainder_ = (10 * val) / 1024;
+        return fmt::format("0.{}K", remainder_);
+    }
+    static const char unit_chars[] = {
+        '\0', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'
+    };
+    int a = 0;
+    unsigned long long value;
+    unsigned long long remainder;
+    while (val >= 1024) {
+        value = val / 1024;
+        remainder = val % 1024;
+        val = value;
+        a++;
+    }
+    if (remainder < 100) {
+        return fmt::format("{}{}", value, unit_chars[a]);
+    }
+    else {
+        unsigned long long remainder_ = (10 * remainder) / 1024;
+        return fmt::format("{}.{}{}", value, remainder_, unit_chars[a]);
+    }
+}
+
+const char* bytes_to_human(const unsigned long long& size_in_bytes) {
+    fmt::print("size in [ human: {: >6}, bytes: {} ]\n", make_human_readable_str(size_in_bytes), size_in_bytes);
+    return nullptr;
+}
+
+int main2() {
+    bytes_to_human(1);
+    bytes_to_human(10);
+    bytes_to_human(100);
+    bytes_to_human(990);
+    bytes_to_human(1000);
+    bytes_to_human(1023);
+    bytes_to_human(1024);
+    bytes_to_human(1025);
+    bytes_to_human(1800);
+    bytes_to_human(1900);
+    bytes_to_human(2000);
+    bytes_to_human(2047);
+    bytes_to_human(2048);
+    bytes_to_human(2049);
+    bytes_to_human(2500);
+    bytes_to_human(10000);
+    bytes_to_human(100000);
+    bytes_to_human(1000000);
+    bytes_to_human(10000000);
+    bytes_to_human(100000000);
+    bytes_to_human(1000000000);
+    bytes_to_human(10000000000);
+    bytes_to_human(100000000000);
+    bytes_to_human(1000000000000);
+    bytes_to_human(10000000000000);
+    return 0;
+}
+
 bool is_ls = false;
 bool is_split = false;
 bool is_join = false;
@@ -711,8 +788,8 @@ struct PathRecorder {
         fmt::print("split files recorded: {}\n", split_number+1);
         fmt::print("symlinks recorded:    {}\n", bird_is_the_word_s.size());
         fmt::print("unknown types:        {}\n", unknowns);
-        fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
+        fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
         fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), max_perms_str, max_size, max_chunk, mfc, max_path);
         return 0;
     }
@@ -1135,8 +1212,8 @@ struct PathRecorder {
                 fflush(stderr);
             }
         }
-        fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
+        fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
         fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(files, chunks)), max_perms, max_size, max_chunk, mfc, max_path);
         fmt::print("reading {} symlinks\n", symlinks);
         while (symlinks != 0) {
@@ -1476,8 +1553,8 @@ struct PathRecorder {
                 split_open = false;
             }
         }
-        fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
-        fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
+        fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
         fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(files, chunks)), max_perms, max_size, max_chunk, mfc, max_path);
         fmt::print("reading {} symlinks\n", symlinks);
         while (symlinks != 0) {
