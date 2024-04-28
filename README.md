@@ -16,13 +16,13 @@ a directory / file splitter designed to split a file or a directory into fixed s
     [e.txt f.mp3 g.ts i.lib o.r] chunk 2
     and so on
     ```
-  - most archival programs do not do this
-    - the only ones that can are
+  - as far as i know, most archival programs do not do this
+    - the only ones i know that can are
       - WinRAR
         - (closed source)
       - 7Zip
         - (Open Source but not many api examples)
-- stores the `dictionary info` in a separate file
+- stores the `dictionary infomation` in a separate file
   - this allows rapid listing of large archives by downloading only a small dictionary file that lists the content of the archive
   - this also allows efficient serialization of files since we need not include any metadata in the chunks
   - this also allows 1 byte sized chunks if desired
@@ -41,9 +41,12 @@ a directory / file splitter designed to split a file or a directory into fixed s
 - specific file(s)/directory(s) extraction
   - due to the split system, it is possible to scan the metadata map to compute which chunks are required to extract a specific file(s)/directory(s), and then only download those required chunks
     - this can drastically reduce download time since the entire archive would not need to be downloaded just to extract a single file
+    - however, this depends heavily on the split size used to create the archive, for example, if we create an archive with a 1 GB split size, then it is very likely that the bandwidth saved will be minimal unless the total complete download size outweighs the size of a single split chunk
+      - for example, if we split by 1 GB, into 20 separate split files, we get a max chunk size of 1 GB with a total size of 20 GB
+      - assuming we have a file with a size of 1 GB or less, this would allow us to download a min of 1 GB instead of the entire 20 GB
+      - however, if we have a file that is close to 20 GB then we must download the entire 20 GB in order to extract the file, or however many chunks we need in order to extract the file
 
 ### compiler preprocessor defines (ignore this)
-
 ```sh
 # list all macro's predefined by gcc
 gcc -dM -E - < /dev/null | sort
