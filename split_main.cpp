@@ -812,11 +812,17 @@ struct PathRecorder {
             }
             free((void*)location);
             fmt::print("downloaded {} bytes -> {}\n", f.size, tmp.get_path());
+            fflush(stdout);
+            fflush(stderr);
         }
         else {
             fmt::print("failed to initialize curl\n");
+            fflush(stdout);
+            fflush(stderr);
             return -1;
         }
+        fflush(stdout);
+        fflush(stderr);
         return 0;
     }
 
@@ -825,15 +831,21 @@ struct PathRecorder {
             fmt::print("attempting to download a non-url\n");
             return -1;
         }
+        fmt::print("executing curl_global_init() ...\n");
         CURLcode res = curl_global_init(CURL_GLOBAL_ALL);
         if (res != CURLE_OK) {
             fmt::print("curl_global_init() failed: {}\n", curl_easy_strerror(res));
             return -1;
         }
+        fmt::print("executed curl_global_init() ...\n");
         char* p = strdup(url);
         int r = download_url_(p, tmp);
         free((void*)p);
+        fmt::print("executing curl_global_cleanup() ...\n");
         curl_global_cleanup();
+        fmt::print("executed curl_global_cleanup() ...\n");
+        fflush(stdout);
+        fflush(stderr);
         return r;
     }
 
@@ -879,6 +891,9 @@ struct PathRecorder {
             return -1;
         }
         fmt::print("downloaded item: {}\n", url);
+        fmt::print("extracting ...\n");
+        fflush(stdout);
+        fflush(stderr);
         fseek(tmp_split_map.get_handle(), 0, SEEK_SET);
 
         auto parent = std::filesystem::canonical(std::filesystem::absolute(path));
@@ -1018,6 +1033,9 @@ struct PathRecorder {
                                 delete current_tmp_split;
                                 current_tmp_split = nullptr;
                                 split_open = false;
+                                fmt::print("extracted\n");
+                                fflush(stdout);
+                                fflush(stderr);
                             }
                             current_split = split;
                         }
@@ -1046,6 +1064,9 @@ struct PathRecorder {
                                 return -1;
                             }
                             fmt::print("downloaded item: {}\n", out_url);
+                            fmt::print("extracting ...\n");
+                            fflush(stdout);
+                            fflush(stderr);
                             free(t);
                             fseek(current_tmp_split->get_handle(), 0, SEEK_SET);
                             split_open = true;
@@ -1109,6 +1130,9 @@ struct PathRecorder {
                     current_tmp_split = nullptr;
                 }
                 split_open = false;
+                fmt::print("extracted\n");
+                fflush(stdout);
+                fflush(stderr);
             }
         }
         fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
