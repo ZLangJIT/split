@@ -45,6 +45,9 @@ a directory / file splitter designed to split a file or a directory into fixed s
       - for example, if we split by 1 GB, into 20 separate split files, we get a max chunk size of 1 GB with a total size of 20 GB
       - assuming we have a file with a size of 1 GB or less, this would allow us to download a min of 1 GB instead of the entire 20 GB
       - however, if we have a file that is close to 20 GB then we must download all 20 chunks (20 GB), or however many chunks the large file takes up, in order to extract the file
+    - however, if we have, say a large folder of files, and we split into 10 MB chunks, then we may end up with millions of 10 MB chunks totaling around hundreds of GB
+      - in this case, the bandwidth saving for file extraction would be extremely high since we need only download a min of 10 MB or so to extract a few files
+      - instead downloading hundreds of GB just to extract a few files
 
 ### compiler preprocessor defines (ignore this)
 ```sh
