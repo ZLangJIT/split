@@ -788,8 +788,16 @@ struct PathRecorder {
         fmt::print("split files recorded: {}\n", split_number+1);
         fmt::print("symlinks recorded:    {}\n", bird_is_the_word_s.size());
         fmt::print("unknown types:        {}\n", unknowns);
-        fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
-        fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
+        if (total >= 1000) {
+            fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
+        } else {
+            fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", bird_is_the_word_f.size(), fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), total, fmt::formatted_size("{}", std::max(total, totalc)));
+        }
+        if (totalc >= 1000) {
+            fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
+        } else {
+            fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", total_chunk_count, fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        }
         fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(bird_is_the_word_f.size(), total_chunk_count)), max_perms_str, max_size, max_chunk, mfc, max_path);
         return 0;
     }
@@ -1212,8 +1220,18 @@ struct PathRecorder {
                 fflush(stderr);
             }
         }
-        fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
-        fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
+        if (total >= 1000) {
+            fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
+        }
+        else {
+            fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
+        }
+        if (totalc >= 1000) {
+            fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
+        }
+        else {
+            fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        }
         fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(files, chunks)), max_perms, max_size, max_chunk, mfc, max_path);
         fmt::print("reading {} symlinks\n", symlinks);
         while (symlinks != 0) {
@@ -1553,8 +1571,16 @@ struct PathRecorder {
                 split_open = false;
             }
         }
-        fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
-        fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
+        if (total >= 1000) {
+            fmt::print("total size of {: >{}} files:  {: >{}} bytes ({})\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(total));
+        } else {
+            fmt::print("total size of {: >{}} files:  {: >{}} bytes\n", files, fmt::formatted_size("{}", std::max(files, chunks)), total, fmt::formatted_size("{}", std::max(total, totalc)));
+        }
+        if (totalc >= 1000) {
+            fmt::print("total size of {: >{}} chunks: {: >{}} bytes ({})\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)), make_human_readable_str(totalc));
+        } else {
+            fmt::print("total size of {: >{}} chunks: {: >{}} bytes\n", chunks, fmt::formatted_size("{}", std::max(files, chunks)), totalc, fmt::formatted_size("{}", std::max(total, totalc)));
+        }
         fmt::print("largest file: {: >{}}         {} {: >8}   ({: >{}} chunks)   {}\n", "", fmt::formatted_size("{}", std::max(files, chunks)), max_perms, max_size, max_chunk, mfc, max_path);
         fmt::print("reading {} symlinks\n", symlinks);
         while (symlinks != 0) {
