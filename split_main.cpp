@@ -891,7 +891,6 @@ struct PathRecorder {
             return -1;
         }
         fmt::print("downloaded item: {}\n", url);
-        fmt::print("extracting ...\n");
         fflush(stdout);
         fflush(stderr);
         fseek(tmp_split_map.get_handle(), 0, SEEK_SET);
