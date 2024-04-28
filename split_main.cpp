@@ -876,6 +876,7 @@ struct PathRecorder {
                     fmt::print("mkdir {}\n", out_directory);
                 }
                 else {
+                    fmt::print("creating output directory: {}\n", out_directory);
                     std::filesystem::create_directory(out_directory);
                 }
             }
@@ -1244,6 +1245,7 @@ struct PathRecorder {
                     fmt::print("mkdir {}\n", out_directory);
                 }
                 else {
+                    fmt::print("creating output directory: {}\n", out_directory);
                     std::filesystem::create_directory(out_directory);
                 }
             }
