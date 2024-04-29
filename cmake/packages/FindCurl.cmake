@@ -41,6 +41,11 @@ find_package_handle_standard_args(Curl
                                     CURL_VERSION_STRING)
 mark_as_advanced(CURL_INCLUDE_DIRS CURL_LIBRARIES)
 
+if (CURL_FOUND)
+    find_package(OpenSSL REQUIRED)
+    find_package(ZLIB REQUIRED)
+endif()
+
 message(STATUS "Curl: found :        ${CURL_FOUND}")
 message(STATUS "Curl: include_dirs : ${CURL_INCLUDE_DIRS}")
 message(STATUS "Curl: lib :          ${CURL_LIBRARIES}")
@@ -51,5 +56,6 @@ if (CURL_FOUND AND NOT TARGET LLVM_STATIC_CURL)
   set_target_properties(LLVM_STATIC_CURL PROPERTIES
                         IMPORTED_LOCATION ${CURL_LIBRARIES}
                         INTERFACE_INCLUDE_DIRECTORIES ${CURL_INCLUDE_DIRS})
+  set_target_properties(LLVM_STATIC_CURL PROPERTIES INTERFACE_LINK_LIBRARIES "${ZLIB_TARGET};${OPENSSL_TARGET};${OPENSSL_CRYPTO_TARGET}")
   set(CURL_TARGET LLVM_STATIC_CURL)
 endif()

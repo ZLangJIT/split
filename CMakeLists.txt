@@ -64,8 +64,6 @@ build_root_add_cmake_package(${CMAKE_CURRENT_SOURCE_DIR}/deps/curl . curl
 )
 endif()
 
-find_package(OpenSSL REQUIRED)
-find_package(ZLIB REQUIRED)
 find_package(Curl REQUIRED)
 find_package(Fmt REQUIRED)
 find_package(TMPFILE REQUIRED)
@@ -75,7 +73,7 @@ target_compile_definitions(split PUBLIC "NOMINMAX")
 target_include_directories(split PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_directories(split PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(split PRIVATE ${CURL_TARGET} ${ZLIB_TARGET} ${OPENSSL_TARGET} ${OPENSSL_CRYPTO_TARGET} ${FMT_TARGET} ${TMPFILE_TARGET})
+target_link_libraries(split PRIVATE ${CURL_TARGET} ${FMT_TARGET} ${TMPFILE_TARGET})
 target_link_options(split PRIVATE -static)
 
 set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "Installation directory for executables")
