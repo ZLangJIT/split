@@ -1887,8 +1887,9 @@ int main(int argc, const char** argv) {
                         }
                         char * res = nullptr;
                         try {
-                            res = std::filesystem::canonical(par);
-                        } catch(auto & unused) {
+                            auto st = par.string();
+                            res = std::filesystem::canonical(st.c_str());
+                        } catch(std::exception) {
                             res = nullptr;
                         }
                         if (res == nullptr) {
