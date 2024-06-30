@@ -1,6 +1,6 @@
 [submodule "deps/tmpfile"]
 	path = deps/tmpfile
-	url = https://github.com/mgood7123/tempfile
+	url = https://github.com/ZLangJIT/tempfile
 [submodule "deps/curl"]
 	path = deps/curl
 	url = https://github.com/curl/curl
