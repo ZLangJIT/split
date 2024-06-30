@@ -350,7 +350,11 @@ std::string permissions_to_string(const struct stat& st) {
 
 struct stat string_to_permissions(const char * s) {
     struct stat st;
+#if HAVE_LSTAT
     st.st_mode |= s[0] == 'd' ? S_IFDIR : s[0] == 'l' ? S_IFLNK : S_IFREG;
+#else
+    st.st_mode |= s[0] == 'd' ? S_IFDIR : s[0] == 'l' ? 0 : S_IFREG;
+#endif
     st.st_mode |= s[1] == 'r' ? S_IRUSR : 0;
     st.st_mode |= s[2] == 'w' ? S_IWUSR : 0;
     st.st_mode |= s[3] == 'x' ? S_IXUSR : 0;
@@ -702,7 +706,8 @@ struct PathRecorder {
             fmt::print("recording symlink:   {} {}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, s, mfc, symlink, symlinkInfo.dest);
         }
         w.write_string(symlink);
-        w.write_string(symlinkInfo.dest.c_str());
+        auto s = symlinkInfo.dest.string();
+        w.write_string(s.c_str());
     }
 
     int record(const char* path) {
