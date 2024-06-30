@@ -1886,9 +1886,11 @@ int main(int argc, const char** argv) {
                             par = par.parent_path();
                         }
                         char * res = nullptr;
+                        std::string res_str;
                         try {
-                            auto st = par.string();
-                            res = std::filesystem::canonical(st.c_str());
+                            //auto st = par.string();
+                            res_str = std::filesystem::canonical(par);
+                            res = res_str.c_str();
                         } catch(std::exception) {
                             res = nullptr;
                         }
