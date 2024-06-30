@@ -1886,7 +1886,12 @@ int main(int argc, const char** argv) {
                             par = par.parent_path();
                         }
                         auto p = par.string();
-                        char* res = realpath(p.c_str(), nullptr);
+                        char * res;
+                        try {
+                            res = std::filesystem::canonical(p);
+                        } catch(auto & unused) {
+                            res = nullptr;
+                        }
                         if (res == nullptr) {
                             auto se = errno;
                             fmt::print("failed to resolve path of {}\nerrno: -{} ({})\n", p, se, fmt::system_error(se, ""));
