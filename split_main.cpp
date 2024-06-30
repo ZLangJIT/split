@@ -1885,16 +1885,15 @@ int main(int argc, const char** argv) {
                         if (par.has_parent_path() && par != root) {
                             par = par.parent_path();
                         }
-                        auto p = par.string();
-                        char * res;
+                        char * res = nullptr;
                         try {
-                            res = std::filesystem::canonical(p);
+                            res = std::filesystem::canonical(par);
                         } catch(auto & unused) {
                             res = nullptr;
                         }
                         if (res == nullptr) {
                             auto se = errno;
-                            fmt::print("failed to resolve path of {}\nerrno: -{} ({})\n", p, se, fmt::system_error(se, ""));
+                            fmt::print("failed to resolve path of {}\nerrno: -{} ({})\n", par, se, fmt::system_error(se, ""));
                             return -1;
                         }
                         std::string r = std::string(res) + "/" + std::filesystem::path(file).filename().string();
