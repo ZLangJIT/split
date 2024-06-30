@@ -706,8 +706,8 @@ struct PathRecorder {
             fmt::print("recording symlink:   {} {}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, s, mfc, symlink, symlinkInfo.dest);
         }
         w.write_string(symlink);
-        auto s = symlinkInfo.dest.string();
-        w.write_string(s.c_str());
+        auto s2 = symlinkInfo.dest.string();
+        w.write_string(s2.c_str());
     }
 
     int record(const char* path) {
