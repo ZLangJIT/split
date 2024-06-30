@@ -268,10 +268,18 @@ struct BinReader {
 
 bool get_stats(const std::filesystem::path& path, struct stat& st) {
     auto ps = std::filesystem::absolute(path).string();
-    auto s = ps.c_str();;
+    auto s = ps.c_str();
+#if HAVE_LSTAT
     if (lstat(s, &st) == -1) {
+#else
+    if (stat(s, &st) == -1) {
+#endif
         auto se = errno;
+#if HAVE_LSTAT
         fmt::print("failed to lstat {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+#else
+        fmt::print("failed to stat {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+#endif
         return false;
     }
     return true;
@@ -280,11 +288,19 @@ bool get_stats(const std::filesystem::path& path, struct stat& st) {
 bool path_exists(const std::filesystem::path& path) {
     struct stat st;
     auto ps = std::filesystem::absolute(path).string();
-    auto s = ps.c_str();;
+    auto s = ps.c_str();
+#if HAVE_LSTAT
     if (lstat(s, &st) == -1) {
+#else
+    if (stat(s, &st) == -1) {
+#endif
         auto se = errno;
         if (se == ENOENT) return false;
+#if HAVE_LSTAT
         fmt::print("failed to lstat {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+#else
+        fmt::print("failed to stat {}\nerrno: -{} ({})\n", s, se, fmt::system_error(se, ""));
+#endif
         return false;
     }
     return true;
@@ -299,13 +315,21 @@ inline bool is_reg(const struct stat& st) {
 }
 
 inline bool is_symlink(const struct stat& st) {
+#if HAVE_LSTAT
     return (st.st_mode & S_IFMT) == S_IFLNK;
+#else
+    return false;
+#endif
 }
 
-bool is_symlink(const std::filesystem::path& path) {
+inline bool is_symlink(const std::filesystem::path& path) {
+#if HAVE_LSTAT
     struct stat st;
     if (!get_stats(path, st)) return false;
     return is_symlink(st);
+#else
+    return false;
+#endif
 }
 
 std::string permissions_to_string(const struct stat& st) {
@@ -353,6 +377,7 @@ std::filesystem::perms permissions_to_filesystem(const struct stat& st) {
     return s;
 }
 
+#ifdef HAVE_LSTAT
 std::string get_symlink_dest(const std::filesystem::path& path, const struct stat & st) {
     if ((st.st_mode & S_IFMT) == S_IFLNK) {
         auto path_size = st.st_size + 1;
@@ -380,6 +405,7 @@ std::string get_symlink_dest(const std::filesystem::path& path) {
     if (!get_stats(path, st)) return "";
     return get_symlink_dest(path, st);
 }
+#endif
 
 // the path converter is done, any path is now converted into a path relative to .
 //
@@ -417,6 +443,7 @@ struct PathRecorder {
         uintmax_t file_size;
         std::vector<ChunkInfo> file_chunks;
     };
+    
     struct SymlinkInfo {
         std::filesystem::path path;
         std::filesystem::path dest;
@@ -597,6 +624,7 @@ struct PathRecorder {
             file_info.file_chunks = std::move(file_chunks);
             bird_is_the_word_f.emplace_back(std::move(file_info));
         }
+#ifdef HAVE_LSTAT
         else if (is_symlink(st)) {
             if (verbose_files) fmt::print("packing symlink: {}\n", path);
             auto dest = get_symlink_dest(path);
@@ -620,6 +648,7 @@ struct PathRecorder {
             si.dest = dest;
             bird_is_the_word_s.emplace_back(si);
         }
+#endif
         else {
             auto s = path.string();
             fmt::print("unknown type: {}\n", &s[trim.length()]);
@@ -1298,7 +1327,11 @@ struct PathRecorder {
                     //    }
                     //}
                     //else {
+#ifdef HAVE_LSTAT
                     std::filesystem::create_symlink(symlink_dest, sp);
+#else
+                    fmt::print("<SKIPPED> {} {: >8}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, 0, mfc, symlink, symlink_dest);
+#endif
                     //}
                 }
             }
@@ -1649,7 +1682,11 @@ struct PathRecorder {
                     //    }
                     //}
                     //else {
-                        std::filesystem::create_symlink(symlink_dest, sp);
+#ifdef HAVE_LSTAT
+                    std::filesystem::create_symlink(symlink_dest, sp);
+#else
+                    fmt::print("<SKIPPED> {} {: >8}   ({: >{}} chunks)   {} -> {}\n", "lrwxrwxrwx", 0, 0, mfc, symlink, symlink_dest);
+#endif
                     //}
                 }
             }

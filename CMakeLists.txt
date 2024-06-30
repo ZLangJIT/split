@@ -68,6 +68,13 @@ find_package(Curl REQUIRED)
 find_package(Fmt REQUIRED)
 find_package(TMPFILE REQUIRED)
 
+include(CheckSymbolExists)
+
+# Check for macro SEEK_SET
+check_symbol_exists(S_IFLNK "sys/stat.h" HAVE_S_IFLNK)
+# Check for function fopen
+check_symbol_exists(lstat "sys/stat.h" HAVE_LSTAT)
+
 add_executable(split split_main.cpp)
 target_compile_definitions(split PUBLIC "NOMINMAX")
 target_include_directories(split PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
