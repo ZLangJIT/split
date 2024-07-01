@@ -1889,7 +1889,7 @@ int main(int argc, const char** argv) {
                         std::string res_str;
                         try {
                             //auto st = par.string();
-                            res_str = std::filesystem::canonical(par);
+                            res_str = std::filesystem::canonical(par).string();
                             res = res_str.c_str();
                         } catch(std::exception) {
                             res = nullptr;
