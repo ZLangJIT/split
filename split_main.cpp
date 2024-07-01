@@ -1885,7 +1885,7 @@ int main(int argc, const char** argv) {
                         if (par.has_parent_path() && par != root) {
                             par = par.parent_path();
                         }
-                        char * res = nullptr;
+                        const char * res = nullptr;
                         std::string res_str;
                         try {
                             //auto st = par.string();
