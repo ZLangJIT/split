@@ -81,6 +81,11 @@ target_include_directories(split PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_directories(split PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(split PRIVATE ${CURL_TARGET} ${FMT_TARGET} ${TMPFILE_TARGET})
+
+#if (WIN32)
+#    target_link_libraries(split PRIVATE ws2_32)
+#endif()
+
 target_link_options(split PRIVATE -static)
 
 set(INSTALL_BIN_DIR "${CMAKE_INSTALL_PREFIX}/bin" CACHE PATH "Installation directory for executables")
