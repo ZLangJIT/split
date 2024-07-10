@@ -1899,8 +1899,9 @@ int main(int argc, const char** argv) {
                             fmt::print("failed to resolve path of {}\nerrno: -{} ({})\n", par, se, fmt::system_error(se, ""));
                             return -1;
                         }
-                        std::string r = std::string(res) + "/" + std::filesystem::path(file).filename().string();
-                        free((void*)res);
+                        std::string r = res_str + "/" + std::filesystem::path(file).filename().string();
+                        res = nullptr;
+                        res_str = std::move(std::string());
                         std::filesystem::path target = r;
                         if (current.compare(target) == 0) {
                             fmt::print("cannot remove the current working directory\n");
